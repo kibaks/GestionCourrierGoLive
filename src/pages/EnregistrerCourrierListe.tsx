@@ -159,6 +159,7 @@ const EnregistrerCourrierListe: React.FC = () => {
 
   const [rows, setRows] = useState<RowData[]>(() => { const d = getDefaults(); return [makeRow(d), makeRow(d)]; });
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const userDefaultsApplied = useRef(false);
   const toggleExpand = (id: string) => setExpanded(p => ({ ...p, [id]: !p[id] }));
   const [status, setStatus] = useState<Record<string, RowStatus>>({});
   const [errors, setErrors] = useState<Record<string, RowError>>({});
@@ -295,6 +296,31 @@ const EnregistrerCourrierListe: React.FC = () => {
     });
     setExtraColumns(cols);
   }, [formConfig, activeSens, activeType]);
+
+  // Une fois l'utilisateur chargé, appliquer les valeurs par défaut sensibles au rôle
+  // (sinon les lignes créées au premier rendu ont expéditeur/destinataire vides)
+  useEffect(() => {
+    if (user && !userDefaultsApplied.current) {
+      userDefaultsApplied.current = true;
+      const d = getDefaults(activeSens, activeType);
+      setRows(prev => prev.map(r => {
+        if (status[r.id] === 'saved') return r;
+        const base = makeRow(d);
+        return {
+          ...base,
+          id: r.id,
+          dateReception: r.dateReception || base.dateReception,
+          objet: r.objet || base.objet,
+          expediteur: r.expediteur || base.expediteur,
+          destinataire: r.destinataire || base.destinataire,
+          extraFields: r.extraFields,
+          folderId: r.folderId,
+          referenceExterne: r.referenceExterne,
+          files: r.files,
+        };
+      }));
+    }
+  }, [user]);
 
   // Synchroniser les lignes non sauvegardées avec les options globales Sens/Type
   useEffect(() => {
