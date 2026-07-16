@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { courrierService } from '../services/courrierService';
@@ -967,7 +968,7 @@ const CahierRegistre: React.FC = () => {
       </div>
 
       {/* ── Modal Aperçu PDF ── */}
-      {showPreviewModal && previewUrl && (
+      {showPreviewModal && previewUrl && createPortal(
         <div
           className="fixed inset-0 z-[100000] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4"
           onClick={() => { URL.revokeObjectURL(previewUrl); setShowPreviewModal(false); setPreviewUrl(null); }}
@@ -1008,7 +1009,8 @@ const CahierRegistre: React.FC = () => {
               />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
