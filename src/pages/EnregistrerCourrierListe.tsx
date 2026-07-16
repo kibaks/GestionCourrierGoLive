@@ -1134,7 +1134,7 @@ const EnregistrerCourrierListe: React.FC = () => {
       <React.Fragment key={`folder-${folder.id}`}>
         {/* Ligne catégorie */}
         <tr className={`bg-amber-50 border-b border-amber-100 ${isDraggedOver ? 'bg-blue-100' : ''}`}>
-          <td colSpan={8} className="px-3 py-2">
+          <td colSpan={7} className="px-3 py-2">
             <div
               className={`flex items-center gap-2 rounded-xl border-2 transition-all ${
                 isDraggedOver
@@ -1226,7 +1226,7 @@ const EnregistrerCourrierListe: React.FC = () => {
         {/* Mode déplacement - sélection de la catégorie cible */}
         {movingFolderId && (
           <tr className="bg-blue-50/50">
-            <td colSpan={8} className="px-3 py-2">
+            <td colSpan={7} className="px-3 py-2">
               <div className="flex items-center gap-2 text-sm text-blue-700">
                 <FontAwesomeIcon icon={faArrowsAlt} />
                 <span>Sélectionnez la catégorie de destination pour "{folders.find(f => f.id === movingFolderId)?.name}"</span>
@@ -1253,7 +1253,7 @@ const EnregistrerCourrierListe: React.FC = () => {
         {/* Champ inline pour créer un sous-catégorie */}
         {isExpanded && inlineAddParentId === folder.id && (
           <tr className="bg-amber-50/50">
-            <td colSpan={8} className="px-3 py-2">
+            <td colSpan={7} className="px-3 py-2">
               <div className="flex items-center gap-2 ml-4" style={{ paddingLeft: `${(level + 1) * 24 + 12}px` }}>
                 <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center">
                   <FontAwesomeIcon icon={faFolderPlus} className="text-amber-500 text-xs" />
@@ -1331,16 +1331,6 @@ const EnregistrerCourrierListe: React.FC = () => {
               error={err.objet}
             />
           </td>
-          {/* Colonne 3b: Référence / Numéro de la lettre */}
-          <td className="px-2 py-1.5">
-            <MaterialInput
-              label="Référence"
-              value={row.referenceExterne}
-              onChange={e => upd(row.id, 'referenceExterne', e.target.value)}
-              disabled={st === 'saved'}
-              error={err.referenceExterne}
-            />
-          </td>
           {/* Colonne 4: Urgence (depuis extraFields) */}
           <td className="px-2 py-1.5 text-center">
             {(() => {
@@ -1399,7 +1389,7 @@ const EnregistrerCourrierListe: React.FC = () => {
         </tr>
         {expanded[row.id] && (
           <tr className={rowBg}>
-            <td colSpan={8} className="px-3 pb-3 pt-0">
+            <td colSpan={7} className="px-3 pb-3 pt-0">
               <div className="rounded-2xl border border-indigo-100 bg-white shadow-sm overflow-hidden">
                 <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-50 to-blue-50/60 border-b border-indigo-100">
                   <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
@@ -1760,7 +1750,6 @@ const EnregistrerCourrierListe: React.FC = () => {
               <th className="px-3 py-3 text-center w-10 text-xs font-bold text-surface-400">#</th>
               <th className="px-3 py-3 text-left text-xs font-bold text-surface-600 uppercase tracking-wider">{activeSens === SensCourrier.ENTRANT ? 'Expéditeur' : 'Destinataire'}</th>
               <th className="px-3 py-3 text-left w-64 text-xs font-bold text-surface-600 uppercase tracking-wider">Objet</th>
-              <th className="px-3 py-3 text-left w-32 text-xs font-bold text-surface-600 uppercase tracking-wider">Référence</th>
               <th className="px-3 py-3 text-center w-28 text-xs font-bold text-surface-600 uppercase tracking-wider">Urgence</th>
               <th className="px-3 py-3 text-left w-40 text-xs font-bold text-surface-600 uppercase tracking-wider">Catégorie</th>
               <th className="px-3 py-3 text-center w-20 text-xs font-bold text-surface-600 uppercase tracking-wider">État</th>
@@ -1775,7 +1764,7 @@ const EnregistrerCourrierListe: React.FC = () => {
               return (
                 <React.Fragment key="unassigned">
                   <tr className="bg-slate-50/80 border-b border-slate-200">
-                    <td colSpan={8} className="px-3 py-2">
+                    <td colSpan={7} className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center">
                           <FontAwesomeIcon icon={faFolderOpen} className="text-white text-sm" />
@@ -1796,7 +1785,7 @@ const EnregistrerCourrierListe: React.FC = () => {
             {/* Champ inline pour créer une catégorie racine */}
             {inlineAddRoot && (
               <tr className="bg-amber-50/50">
-                <td colSpan={8} className="px-3 py-2">
+                <td colSpan={7} className="px-3 py-2">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
                       <FontAwesomeIcon icon={faFolderPlus} className="text-amber-500 text-sm" />
