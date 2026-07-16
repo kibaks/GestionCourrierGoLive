@@ -41,6 +41,27 @@ function runPowerShellAsync(script, timeoutMs = 15000) {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+function loadLocalConfig() {
+  try {
+    const candidates = [];
+    if (process.execPath) {
+      candidates.push(path.join(path.dirname(process.execPath), 'config.json'));
+    }
+    candidates.push(path.join(process.cwd(), 'config.json'));
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+        if (cfg.port) process.env.PORT = process.env.PORT || String(cfg.port);
+        return cfg;
+      }
+    }
+  } catch (e) {
+    // Ignore config load errors
+  }
+  return {};
+}
+loadLocalConfig();
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 

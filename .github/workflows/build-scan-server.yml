@@ -1,0 +1,46 @@
+name: Build Windows Scan Server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'scripts/build-windows-standalone.js'
+      - '.github/workflows/build-scan-server.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install esbuild
+        run: npm install --save-dev esbuild
+
+      - name: Prepare standalone files
+        run: node scripts/build-windows-standalone.js
+
+      - name: Build executable
+        shell: cmd
+        run: |
+          cd distwindows
+          node --experimental-sea-config sea-config.json
+          copy "%PROGRAMFILES%\nodejs\node.exe" GestionCourrierScan.exe
+          npx postject GestionCourrierScan.exe NODE_SEA_BLOB sea-prep.blob --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b283df2692 --macho-segment-name NODE_SEA
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gestion-courrier-scan-server-windows
+          path: |
+            dist/windows/GestionCourrierScan.exe
+            dist/windows/config.json
+            dist/windows/GestionCourrierScan.xml
+            dist/windows/install.ps1
+            dist/windows/uninstall.ps1
