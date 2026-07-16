@@ -126,7 +126,7 @@ export const GlobalLoadingProvider: React.FC<{ children: React.ReactNode }> = ({
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 99999,
+            zIndex: 1000,
             background: 'rgba(17,24,39,0.35)',
             backdropFilter: 'blur(2px)',
             display: 'flex',

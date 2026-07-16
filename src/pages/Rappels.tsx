@@ -780,10 +780,10 @@ const Rappels: React.FC = () => {
       {selectedRappel && (
         <>
           {/* Backdrop */}
-          <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-30 transition-opacity" onClick={closePanel} />
+          <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[100000] transition-opacity" onClick={closePanel} />
           
           {/* Panel */}
-          <div className="fixed inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl z-40 flex flex-col animate-slideInRight">
+          <div className="fixed inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl z-[100000] flex flex-col animate-slideInRight">
             {/* Header du panel */}
             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-4 flex items-center justify-between flex-shrink-0">
               <div className="text-white">

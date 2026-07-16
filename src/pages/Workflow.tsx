@@ -3085,7 +3085,7 @@ const Workflow: React.FC = () => {
 
               {/* Panneau de détails */}
               {selectedEtape && (
-                <div className="fixed top-[80px] right-0 bottom-0 w-[400px] max-w-[95vw] bg-white border-l border-slate-200 shadow-2xl z-40 flex flex-col overflow-hidden rounded-l-2xl">
+                <div className="fixed top-[80px] right-0 bottom-0 w-[400px] max-w-[95vw] bg-white border-l border-slate-200 shadow-2xl z-[100000] flex flex-col overflow-hidden rounded-l-2xl">
                   {/* En-tête — carte titre */}
                   <div className="p-5 border-b border-slate-100 bg-gradient-to-br from-slate-50 via-white to-primary-50/30">
                     <div className="flex items-start justify-between gap-2 mb-3">
