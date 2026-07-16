@@ -96,48 +96,59 @@ const EnregistrerCourrierListe: React.FC = () => {
   };
 
   // Déduire les valeurs par défaut depuis le rôle et la direction de l'utilisateur
-  const getDefaults = (): RowDefaults => {
+  const getDefaults = (forSens: SensCourrier = initSens, forType: TypeCourrier = initType): RowDefaults => {
     const defaults: RowDefaults = {
-      sens: initSens,
-      type: initType,
+      sens: forSens,
+      type: forType,
       direction: user?.direction ?? '',
       service: user?.service ?? '',
     };
 
     const userDirection = user?.direction || '';
     const isSecDG = user?.role === Role.SECRETAIRE && isDirectionGenerale(userDirection);
+    const fallbackEntity = userDirection || 'Direction Générale';
 
-    if (isSecDG) {
+    // Pour les courriers externes, les deux champs (expéditeur et destinataire) sont requis côté API.
+    // Le champ visible est celui que l'utilisateur remplit ; l'autre champ est pré-rempli automatiquement.
+    if (forType === TypeCourrier.EXTERNE) {
+      if (forSens === SensCourrier.ENTRANT) {
+        defaults.expediteur = '';
+        defaults.destinataire = fallbackEntity;
+      } else {
+        defaults.expediteur = fallbackEntity;
+        defaults.destinataire = '';
+      }
+    } else if (isSecDG) {
       // Secrétaire du DG
-      if (initSens === SensCourrier.ENTRANT) {
+      if (forSens === SensCourrier.ENTRANT) {
         defaults.destinataire = 'Direction Générale';
       } else {
         defaults.expediteur = 'Direction Générale';
       }
     } else if (user?.role === Role.SECRETAIRE) {
       // Secrétaire d'une direction X
-      if (initSens === SensCourrier.ENTRANT) {
+      if (forSens === SensCourrier.ENTRANT) {
         defaults.destinataire = userDirection;
       } else {
         defaults.expediteur = userDirection;
       }
     } else if (user?.role === Role.DIRECTEUR) {
       // Directeur d'une direction X
-      if (initSens === SensCourrier.ENTRANT) {
+      if (forSens === SensCourrier.ENTRANT) {
         defaults.destinataire = 'Direction Générale';
       } else {
         defaults.expediteur = userDirection;
         defaults.destinataire = 'Direction Générale';
       }
     } else if (user?.role === Role.DIRECTEUR_GENERAL) {
-      if (initSens === SensCourrier.ENTRANT) {
-        defaults.destinataire = userDirection || 'Direction Générale';
+      if (forSens === SensCourrier.ENTRANT) {
+        defaults.destinataire = fallbackEntity;
       } else {
-        defaults.expediteur = userDirection || 'Direction Générale';
+        defaults.expediteur = fallbackEntity;
       }
     } else if (user?.direction) {
       // Autres rôles avec direction (chef service, agent...)
-      if (initSens === SensCourrier.ENTRANT) {
+      if (forSens === SensCourrier.ENTRANT) {
         defaults.destinataire = userDirection;
       } else {
         defaults.expediteur = userDirection;
@@ -291,7 +302,15 @@ const EnregistrerCourrierListe: React.FC = () => {
       // Ne pas modifier les lignes déjà sauvegardées (vérification via closure sur status)
       if (r.sens === activeSens && r.type === activeType) return r;
       // Mettre à jour le sens et type pour correspondre aux options globales
-      return { ...r, sens: activeSens, type: activeType };
+      // Ré-appliquer les valeurs par défaut de l'expéditeur/destinataire pour éviter un champ requis caché vide
+      const defaults = getDefaults(activeSens, activeType);
+      return {
+        ...r,
+        sens: activeSens,
+        type: activeType,
+        ...(defaults.expediteur !== undefined ? { expediteur: defaults.expediteur } : {}),
+        ...(defaults.destinataire !== undefined ? { destinataire: defaults.destinataire } : {}),
+      };
     }));
   }, [activeSens, activeType]);
 
@@ -530,9 +549,7 @@ const EnregistrerCourrierListe: React.FC = () => {
   };
 
   const addRow = () => {
-    const d = getDefaults();
-    d.sens = activeSens;
-    d.type = activeType;
+    const d = getDefaults(activeSens, activeType);
     setRows(p => [...p, makeRow(d)]);
   };
   const rmRow = (id: string) => {
