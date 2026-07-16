@@ -1,0 +1,196 @@
+
+> rhpme@1.0.0 build
+> tsc && vite build
+
+src/components/ExcelEditor.tsx(122,83): error TS2322: Type 'string | number | boolean' is not assignable to type 'string | number | null'.
+  Type 'false' is not assignable to type 'string | number | null'.
+src/components/ExcelEditor.tsx(125,17): error TS2352: Conversion of type 'CellErrorValue | CellRichTextValue | CellHyperlinkValue | CellFormulaValue | CellSharedFormulaValue' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'CellSharedFormulaValue' is not comparable to type 'Record<string, unknown>'.
+    Index signature for type 'string' is missing in type 'CellSharedFormulaValue'.
+src/components/MaterialDateTimeField.tsx(82,36): error TS2345: Argument of type 'DateOrTimeViewWithMeridiem' is not assignable to parameter of type 'SetStateAction<"day" | "hours" | "minutes">'.
+  Type '"month"' is not assignable to type 'SetStateAction<"day" | "hours" | "minutes">'.
+src/pages/admin/GestionDirectionsServices.tsx(339,11): error TS2741: Property 'direction_generale' is missing in type '{ direction: string; service: string; 'sous-service': string; division: string; bureau: string; cellule: string; }' but required in type 'Record<TypeEntiteOrganisationnelle, string>'.
+src/pages/admin/GestionScanners.tsx(75,118): error TS2345: Argument of type '""' is not assignable to parameter of type 'ScannerDetectionApproach'.
+src/pages/admin/GestionTypesEntites.tsx(157,8): error TS2339: Property 'map' does not exist on type 'Set<string>'.
+src/pages/admin/GestionTypesEntites.tsx(157,12): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/pages/admin/GestionTypesEntites.tsx(158,16): error TS7006: Parameter 'x' implicitly has an 'any' type.
+src/pages/admin/GestionTypesEntites.tsx(159,39): error TS7031: Binding element 'id' implicitly has an 'any' type.
+src/pages/admin/GestionUtilisateurs.tsx(1424,155): error TS2339: Property 'created' does not exist on type 'Promise<{ created: number; errors: number; }>'.
+src/pages/admin/GestionUtilisateurs.tsx(1424,191): error TS2339: Property 'errors' does not exist on type 'Promise<{ created: number; errors: number; }>'.
+src/pages/admin/GestionUtilisateurs.tsx(1424,219): error TS2339: Property 'errors' does not exist on type 'Promise<{ created: number; errors: number; }>'.
+src/pages/DetailCourrier.tsx(225,24): error TS2304: Cannot find name 'closeDialog'.
+src/pages/DetailCourrier.tsx(244,11): error TS2304: Cannot find name 'closeDialog'.
+src/pages/DetailCourrier.tsx(248,11): error TS2304: Cannot find name 'closeDialog'.
+src/pages/DetailCourrier.tsx(1143,21): error TS7006: Parameter 'err' implicitly has an 'any' type.
+src/pages/DetailCourrier.tsx(2633,100): error TS2367: This comparison appears to be unintentional because the types 'boolean' and 'string' have no overlap.
+src/pages/DetailCourrier.tsx(2635,48): error TS2345: Argument of type '"edit"' is not assignable to parameter of type 'SetStateAction<boolean>'.
+src/pages/DetailCourrier.tsx(2642,18): error TS2367: This comparison appears to be unintentional because the types 'boolean' and 'string' have no overlap.
+src/pages/DetailCourrier.tsx(2644,48): error TS2345: Argument of type '"view"' is not assignable to parameter of type 'SetStateAction<boolean>'.
+src/pages/DetailCourrier.tsx(2795,17): error TS2367: This comparison appears to be unintentional because the types 'boolean' and 'string' have no overlap.
+src/pages/DetailCourrier.tsx(2799,102): error TS2345: Argument of type '"view"' is not assignable to parameter of type 'SetStateAction<boolean>'.
+src/pages/DetailCourrier.tsx(2800,49): error TS2345: Argument of type '"view"' is not assignable to parameter of type 'SetStateAction<boolean>'.
+src/pages/DetailCourrier.tsx(2811,64): error TS2345: Argument of type '"edit"' is not assignable to parameter of type 'SetStateAction<boolean>'.
+src/pages/DetailCourrier.tsx(2833,62): error TS2345: Argument of type '"edit"' is not assignable to parameter of type 'SetStateAction<boolean>'.
+src/pages/DetailCourrier.tsx(2842,17): error TS2367: This comparison appears to be unintentional because the types 'boolean' and 'string' have no overlap.
+src/pages/DetailCourrier.tsx(2846,102): error TS2345: Argument of type '"view"' is not assignable to parameter of type 'SetStateAction<boolean>'.
+src/pages/DetailCourrier.tsx(2847,49): error TS2345: Argument of type '"view"' is not assignable to parameter of type 'SetStateAction<boolean>'.
+src/pages/DetailCourrier.tsx(2858,64): error TS2345: Argument of type '"edit"' is not assignable to parameter of type 'SetStateAction<boolean>'.
+src/pages/DetailCourrier.tsx(2880,62): error TS2345: Argument of type '"edit"' is not assignable to parameter of type 'SetStateAction<boolean>'.
+src/pages/DetailCourrier.tsx(3079,20): error TS2304: Cannot find name 'closeDialog'.
+src/pages/EnregistrerCourrier.tsx(54,16): error TS2305: Module '"@fortawesome/free-solid-svg-icons"' has no exported member 'faPushpin'.
+src/pages/EnregistrerCourrier.tsx(385,11): error TS2322: Type 'string' is not assignable to type 'Date'.
+src/pages/EnregistrerCourrier.tsx(386,77): error TS2339: Property 'includes' does not exist on type 'never'.
+src/pages/EnregistrerCourrier.tsx(387,47): error TS2339: Property 'split' does not exist on type 'never'.
+src/pages/EnregistrerCourrier.tsx(391,38): error TS2551: Property 'extraFieldsJson' does not exist on type 'Courrier'. Did you mean 'extraFields'?
+src/pages/EnregistrerCourrier.tsx(391,76): error TS2551: Property 'extraFieldsJson' does not exist on type 'Courrier'. Did you mean 'extraFields'?
+src/pages/EnregistrerCourrier.tsx(411,33): error TS2339: Property 'sousService' does not exist on type 'Courrier'.
+src/pages/EnregistrerCourrier.tsx(412,37): error TS2339: Property 'contenuCourrier' does not exist on type 'Courrier'.
+src/pages/EnregistrerCourrier.tsx(434,22): error TS2339: Property 'dossierId' does not exist on type 'Courrier'.
+src/pages/EnregistrerCourrier.tsx(435,40): error TS2339: Property 'dossierId' does not exist on type 'Courrier'.
+src/pages/EnregistrerCourrier.tsx(450,24): error TS2551: Property 'extraFieldsJson' does not exist on type 'Courrier'. Did you mean 'extraFields'?
+src/pages/EnregistrerCourrier.tsx(450,59): error TS2551: Property 'extraFieldsJson' does not exist on type 'Courrier'. Did you mean 'extraFields'?
+src/pages/EnregistrerCourrier.tsx(452,55): error TS2551: Property 'extraFieldsJson' does not exist on type 'Courrier'. Did you mean 'extraFields'?
+src/pages/EnregistrerCourrier.tsx(726,11): error TS2353: Object literal may only specify known properties, and 'createdAt' does not exist in type '{ userId: string; type: "workflow" | "system" | "assignation" | "rappel" | "echeance" | "courrier"; title: string; message: string; relatedId?: string | undefined; relatedType?: "workflow" | "assignation" | "rappel" | "courrier" | undefined; priority?: "low" | ... 3 more ... | undefined; actionUrl?: string | undefin...'.
+src/pages/EnregistrerCourrier.tsx(1117,32): error TS2304: Cannot find name 'Courrier'.
+src/pages/EnregistrerCourrier.tsx(1210,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/pages/EnregistrerCourrier.tsx(1243,41): error TS2551: Property 'directions' does not exist on type 'Utilisateur'. Did you mean 'direction'?
+src/pages/EnregistrerCourrier.tsx(1244,39): error TS2551: Property 'services' does not exist on type 'Utilisateur'. Did you mean 'service'?
+src/pages/EnregistrerCourrier.tsx(1303,130): error TS2339: Property 'division' does not exist on type 'Utilisateur'.
+src/pages/EnregistrerCourrier.tsx(2037,43): error TS2322: Type 'string[]' is not assignable to type 'SearchableSelectOption[]'.
+  Type 'string' is not assignable to type 'SearchableSelectOption'.
+src/pages/EnregistrerCourrier.tsx(2177,40): error TS2339: Property 'label' does not exist on type 'EntiteTypeDefinition'.
+src/pages/EnregistrerCourrier.tsx(2224,40): error TS2339: Property 'label' does not exist on type 'EntiteTypeDefinition'.
+src/pages/ImpressionCourriers.tsx(264,193): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/pages/ListeCourriers.tsx(129,27): error TS2345: Argument of type '{ canvasContext: CanvasRenderingContext2D; viewport: PageViewport; }' is not assignable to parameter of type 'RenderParameters'.
+  Property 'canvas' is missing in type '{ canvasContext: CanvasRenderingContext2D; viewport: PageViewport; }' but required in type 'RenderParameters'.
+src/pages/ListeCourriers.tsx(196,29): error TS2339: Property 'currentUser' does not exist on type 'AuthContextType'.
+src/pages/ListeCourriers.tsx(335,9): error TS2345: Argument of type 'File' is not assignable to parameter of type 'string'.
+src/pages/ListeCourriers.tsx(1203,26): error TS2345: Argument of type 'Promise<CourrierFolder[]>' is not assignable to parameter of type 'SetStateAction<CourrierFolder[]>'.
+src/pages/ListeCourriers.tsx(1204,28): error TS2345: Argument of type 'Promise<Record<string, string | null>>' is not assignable to parameter of type 'SetStateAction<Record<string, string | null>>'.
+  Type 'Promise<Record<string, string | null>>' is not assignable to type 'Record<string, string | null>'.
+    Index signature for type 'string' is missing in type 'Promise<Record<string, string | null>>'.
+src/pages/ListeCourriers.tsx(1245,33): error TS2339: Property 'currentUser' does not exist on type 'AuthContextType'.
+src/pages/ListeCourriers.tsx(1341,30): error TS2345: Argument of type 'Promise<CourrierFolder[]>' is not assignable to parameter of type 'SetStateAction<CourrierFolder[]>'.
+src/pages/ListeCourriers.tsx(1342,32): error TS2345: Argument of type 'Promise<Record<string, string | null>>' is not assignable to parameter of type 'SetStateAction<Record<string, string | null>>'.
+  Type 'Promise<Record<string, string | null>>' is not assignable to type 'Record<string, string | null>'.
+    Index signature for type 'string' is missing in type 'Promise<Record<string, string | null>>'.
+src/pages/ListeCourriers.tsx(1612,12): error TS2678: Type '"sens"' is not comparable to type '"direction" | "service" | "type" | "dateReception" | "dateEnregistrement" | "priorite" | "statut" | "none"'.
+src/pages/ListeCourriers.tsx(1686,30): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'SetStateAction<string | undefined>'.
+  Type 'null' is not assignable to type 'SetStateAction<string | undefined>'.
+src/pages/ListeCourriers.tsx(2559,39): error TS2304: Cannot find name 'Utilisateur'.
+src/pages/ListeCourriers.tsx(2865,73): error TS2345: Argument of type '(Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "statut"> & { numero?: string | undefined; })[]' is not assignable to parameter of type '(Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "numero"> & { numero?: string | undefined; dateEnregistrement?: Date | undefined; })[]'.
+  Type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "statut"> & { numero?: string | undefined; }' is not assignable to type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "numero"> & { numero?: string | undefined; dateEnregistrement?: Date | undefined; }'.
+    Property 'statut' is missing in type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "statut"> & { numero?: string | undefined; }' but required in type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "numero">'.
+src/pages/ListeCourriers.tsx(3203,17): error TS18048: 'colIndex' is possibly 'undefined'.
+src/pages/ListeCourriers.tsx(3203,49): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/pages/ListeCourriers.tsx(3216,15): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/pages/ListeCourriers.tsx(3243,73): error TS2345: Argument of type '(Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "statut"> & { numero?: string | undefined; })[]' is not assignable to parameter of type '(Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "numero"> & { numero?: string | undefined; dateEnregistrement?: Date | undefined; })[]'.
+  Type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "statut"> & { numero?: string | undefined; }' is not assignable to type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "numero"> & { numero?: string | undefined; dateEnregistrement?: Date | undefined; }'.
+    Property 'statut' is missing in type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "statut"> & { numero?: string | undefined; }' but required in type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "numero">'.
+src/pages/ListeCourriers.tsx(3546,17): error TS18048: 'colIndex' is possibly 'undefined'.
+src/pages/ListeCourriers.tsx(3546,62): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/pages/ListeCourriers.tsx(3564,15): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/pages/ListeCourriers.tsx(3591,73): error TS2345: Argument of type '(Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "statut"> & { numero?: string | undefined; })[]' is not assignable to parameter of type '(Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "numero"> & { numero?: string | undefined; dateEnregistrement?: Date | undefined; })[]'.
+  Type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "statut"> & { numero?: string | undefined; }' is not assignable to type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "numero"> & { numero?: string | undefined; dateEnregistrement?: Date | undefined; }'.
+    Property 'statut' is missing in type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "statut"> & { numero?: string | undefined; }' but required in type 'Omit<Courrier, "id" | "dateEnregistrement" | "createdAt" | "updatedAt" | "numero">'.
+src/pages/ListeCourriers.tsx(3884,96): error TS2345: Argument of type 'Utilisateur | null' is not assignable to parameter of type 'Pick<Utilisateur, "direction" | "service" | "id" | "role"> | undefined'.
+  Type 'null' is not assignable to type 'Pick<Utilisateur, "direction" | "service" | "id" | "role"> | undefined'.
+src/pages/ListeCourriers.tsx(4051,35): error TS2339: Property 'currentUser' does not exist on type 'AuthContextType'.
+src/pages/ListeCourriers.tsx(4367,39): error TS18048: 'col.width' is possibly 'undefined'.
+src/pages/ListeCourriers.tsx(4402,41): error TS18048: 'col.width' is possibly 'undefined'.
+src/pages/ListeCourriers.tsx(4757,219): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/pages/ListeCourriers.tsx(5126,13): error TS2322: Type '"jpg" | "jpeg" | "png" | "webp"' is not assignable to type '"gif" | "jpeg" | "png"'.
+  Type '"jpg"' is not assignable to type '"gif" | "jpeg" | "png"'. Did you mean '"jpeg"'?
+src/pages/ListeCourriers.tsx(6796,9): error TS2552: Cannot find name 'setExpandedDossiers'. Did you mean 'setExpandedCourriers'?
+src/pages/ListeCourriers.tsx(6796,29): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/pages/ListeCourriers.tsx(9084,81): error TS2367: This comparison appears to be unintentional because the types 'Role.SUPER_ADMIN | Role.SECRETAIRE' and 'Role.DIRECTEUR_GENERAL' have no overlap.
+src/pages/ListeCourriers.tsx(9192,22): error TS2322: Type '{ children: string; jsx: true; }' is not assignable to type 'DetailedHTMLProps<StyleHTMLAttributes<HTMLStyleElement>, HTMLStyleElement>'.
+  Property 'jsx' does not exist on type 'DetailedHTMLProps<StyleHTMLAttributes<HTMLStyleElement>, HTMLStyleElement>'.
+src/pages/ListeCourriers.tsx(9573,40): error TS2345: Argument of type '{ sens: string; statut: string; type: string; priorite: string; direction: string; service: string; sousService: string; dateDebut: string; dateFin: string; nonClassifies: false; mesAssignations: false; }' is not assignable to parameter of type 'SetStateAction<{ statut: string; type: string; sens: string; search: string; priorite: string; direction: string; service: string; sousService: string; dateDebut: string; dateFin: string; mesAssignations: boolean; nonClassifies: boolean; }>'.
+  Property 'search' is missing in type '{ sens: string; statut: string; type: string; priorite: string; direction: string; service: string; sousService: string; dateDebut: string; dateFin: string; nonClassifies: false; mesAssignations: false; }' but required in type '{ statut: string; type: string; sens: string; search: string; priorite: string; direction: string; service: string; sousService: string; dateDebut: string; dateFin: string; mesAssignations: boolean; nonClassifies: boolean; }'.
+src/pages/ListeCourriers.tsx(9586,29): error TS2304: Cannot find name 'setSearchTerm'.
+src/pages/ListeCourriers.tsx(9724,44): error TS2345: Argument of type '{ sens: string; statut: string; type: string; priorite: string; direction: string; service: string; sousService: string; dateDebut: string; dateFin: string; nonClassifies: false; mesAssignations: false; }' is not assignable to parameter of type 'SetStateAction<{ statut: string; type: string; sens: string; search: string; priorite: string; direction: string; service: string; sousService: string; dateDebut: string; dateFin: string; mesAssignations: boolean; nonClassifies: boolean; }>'.
+  Property 'search' is missing in type '{ sens: string; statut: string; type: string; priorite: string; direction: string; service: string; sousService: string; dateDebut: string; dateFin: string; nonClassifies: false; mesAssignations: false; }' but required in type '{ statut: string; type: string; sens: string; search: string; priorite: string; direction: string; service: string; sousService: string; dateDebut: string; dateFin: string; mesAssignations: boolean; nonClassifies: boolean; }'.
+src/pages/ListeCourriers.tsx(9737,33): error TS2304: Cannot find name 'setSearchTerm'.
+src/pages/ListeCourriers.tsx(10406,87): error TS2367: This comparison appears to be unintentional because the types 'Role.SUPER_ADMIN | Role.SECRETAIRE' and 'Role.DIRECTEUR_GENERAL' have no overlap.
+src/pages/ListeCourriers.tsx(11570,56): error TS2304: Cannot find name 'faExternalLinkAlt'.
+src/pages/ListeCourriers.tsx(11588,66): error TS2304: Cannot find name 'faExternalLinkAlt'.
+src/pages/ListeCourriers.tsx(11950,29): error TS2304: Cannot find name 'scanModalCourrierId'.
+src/pages/ListeCourriers.tsx(11951,27): error TS2552: Cannot find name 'handleAddScannedFile'. Did you mean 'handleAddScannedToFiles'?
+src/pages/ListeCourriers.tsx(11951,48): error TS2304: Cannot find name 'scanModalCourrierId'.
+src/pages/ListeCourriers.tsx(12049,52): error TS2304: Cannot find name 'faExternalLinkAlt'.
+src/pages/ListeCourriers.tsx(12742,33): error TS2352: Conversion of type 'Courrier' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'Courrier'.
+src/pages/ListeCourriers.tsx(13700,15): error TS2339: Property 'division' does not exist on type 'Utilisateur'.
+src/pages/Organigramme.tsx(478,19): error TS18047: 'user' is possibly 'null'.
+src/pages/Organigramme.tsx(479,17): error TS18047: 'user' is possibly 'null'.
+src/pages/Organigramme.tsx(480,22): error TS18047: 'user' is possibly 'null'.
+src/pages/Organigramme.tsx(481,24): error TS18047: 'user' is possibly 'null'.
+src/pages/Organigramme.tsx(487,23): error TS18047: 'user' is possibly 'null'.
+src/pages/Organigramme.tsx(487,38): error TS18047: 'user' is possibly 'null'.
+src/pages/Organigramme.tsx(487,58): error TS18047: 'user' is possibly 'null'.
+src/pages/Organigramme.tsx(487,83): error TS18047: 'user' is possibly 'null'.
+src/services/courrierServiceFirebase.ts(608,200): error TS2352: Conversion of type 'Rappel' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'Rappel'.
+src/services/courrierServiceFirebase.ts(826,60): error TS2322: Type '"annotation"' is not assignable to type '"workflow" | "system" | "assignation" | "rappel" | "echeance" | "courrier"'.
+src/services/courrierServiceFirebase.ts(1229,11): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/services/formulaireCourrierService.ts(134,9): error TS2741: Property 'width' is missing in type '{ id: string; fields: ({ id: string; name: string; label: string; type: "datetime"; required: true; placeholder: string; } | { id: string; name: string; label: string; type: "text"; required: true; placeholder: string; } | { ...; } | { ...; })[]; }' but required in type 'ColumnConfig'.
+src/services/formulaireCourrierService.ts(194,9): error TS2741: Property 'width' is missing in type '{ id: string; fields: ({ id: string; name: string; label: string; type: "datetime"; required: true; placeholder: string; } | { id: string; name: string; label: string; type: "text"; required: true; placeholder: string; } | { ...; } | { ...; })[]; }' but required in type 'ColumnConfig'.
+src/services/formulaireCourrierService.ts(292,7): error TS7053: Element implicitly has an 'any' type because expression of type 'TypeCourrier.EXTERNE' can't be used to index type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+  Property '[TypeCourrier.EXTERNE]' does not exist on type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+src/services/formulaireCourrierService.ts(292,53): error TS7053: Element implicitly has an 'any' type because expression of type 'TypeCourrier.INTERNE' can't be used to index type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+  Property '[TypeCourrier.INTERNE]' does not exist on type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+src/services/formulaireCourrierService.ts(299,10): error TS7053: Element implicitly has an 'any' type because expression of type 'SensCourrier.ENTRANT' can't be used to index type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+  Property '[SensCourrier.ENTRANT]' does not exist on type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+src/services/formulaireCourrierService.ts(303,10): error TS7053: Element implicitly has an 'any' type because expression of type 'SensCourrier.ENTRANT' can't be used to index type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+  Property '[SensCourrier.ENTRANT]' does not exist on type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+src/services/formulaireCourrierService.ts(309,10): error TS7053: Element implicitly has an 'any' type because expression of type 'SensCourrier.SORTANT' can't be used to index type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+  Property '[SensCourrier.SORTANT]' does not exist on type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+src/services/formulaireCourrierService.ts(313,10): error TS7053: Element implicitly has an 'any' type because expression of type 'SensCourrier.SORTANT' can't be used to index type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+  Property '[SensCourrier.SORTANT]' does not exist on type 'Partial<ExtraFieldsByType> | Partial<ExtraFieldsBySensAndType>'.
+src/services/laravelApiService.ts(24,10): error TS2352: Conversion of type 'Record<string, unknown>' to type 'DossierFichier' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'DossierFichier': id, nom, type, courrierId, and 3 more.
+src/services/laravelApiService.ts(123,10): error TS2352: Conversion of type 'Record<string, unknown>' to type 'Courrier' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'Courrier': id, numero, type, dateReception, and 9 more.
+src/services/laravelApiService.ts(1625,10): error TS2352: Conversion of type 'Record<string, unknown>' to type 'Assignation' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'Assignation': id, courrierId, assigneA, assignePar, and 2 more.
+src/services/laravelApiService.ts(1633,10): error TS2352: Conversion of type 'Record<string, unknown>' to type 'Annotation' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'Annotation': id, courrierId, auteur, contenu, and 2 more.
+src/services/laravelApiService.ts(1652,10): error TS2352: Conversion of type 'Record<string, unknown>' to type 'WorkflowEtape' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'WorkflowEtape': id, courrierId, etape, assigneA, and 3 more.
+src/services/laravelApiService.ts(1661,10): error TS2352: Conversion of type 'Record<string, unknown>' to type 'Rappel' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'Rappel': id, assignationId, courrierId, dateRappel, and 2 more.
+src/services/laravelApiService.ts(1702,10): error TS2352: Conversion of type 'Record<string, unknown>' to type 'EntiteOrganisationnelle' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'EntiteOrganisationnelle': id, nom, type
+src/services/laravelApiService.ts(1730,5): error TS2322: Type 'string[]' is not assignable to type 'Permission[]'.
+  Type 'string' is not assignable to type 'Permission'.
+src/services/notificationService.ts(49,10): error TS2339: Property 'notifySubscribers' does not exist on type 'NotificationService'.
+src/services/notificationService.ts(66,11): error TS2322: Type 'string | undefined' is not assignable to type '"workflow" | "assignation" | "rappel" | "courrier" | undefined'.
+  Type 'string' is not assignable to type '"workflow" | "assignation" | "rappel" | "courrier" | undefined'.
+src/services/notificationService.ts(79,5): error TS2322: Type 'Notification' is not assignable to type 'import("/Users/maz/Documents/GestionCourrier/GestionCourrierAll/src/services/notificationService").Notification'.
+  Types of property 'priority' are incompatible.
+    Type '"low" | "normal" | "high" | "urgent"' is not assignable to type '"normal" | "high" | "urgent"'.
+      Type '"low"' is not assignable to type '"normal" | "high" | "urgent"'.
+src/services/notificationService.ts(104,5): error TS2322: Type 'Notification[]' is not assignable to type 'import("/Users/maz/Documents/GestionCourrier/GestionCourrierAll/src/services/notificationService").Notification[]'.
+  Type 'Notification' is not assignable to type 'import("/Users/maz/Documents/GestionCourrier/GestionCourrierAll/src/services/notificationService").Notification'.
+    Types of property 'priority' are incompatible.
+      Type '"low" | "normal" | "high" | "urgent"' is not assignable to type '"normal" | "high" | "urgent"'.
+        Type '"low"' is not assignable to type '"normal" | "high" | "urgent"'.
+src/services/notificationService.ts(198,26): error TS2339: Property 'notifySubscribers' does not exist on type 'NotificationService'.
+src/services/notificationService.ts(210,24): error TS2339: Property 'notifySubscribers' does not exist on type 'NotificationService'.
+src/services/realTimeTaskSyncService.ts(231,9): error TS2322: Type '"task_completed"' is not assignable to type '"workflow" | "system" | "assignation" | "rappel" | "echeance" | "courrier"'.
+src/services/realTimeTaskSyncService.ts(303,9): error TS2322: Type '"task_completed"' is not assignable to type '"workflow" | "system" | "assignation" | "rappel" | "echeance" | "courrier"'.
+src/services/realTimeTaskSyncService.ts(465,9): error TS2322: Type '"task_completed"' is not assignable to type '"workflow" | "system" | "assignation" | "rappel" | "echeance" | "courrier"'.
+src/services/scannerService.ts(602,42): error TS18048: 'scanner' is possibly 'undefined'.
+src/services/storageSyncService.ts(22,10): error TS2352: Conversion of type 'Record<string, unknown>' to type 'Courrier' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'Courrier': id, numero, type, dateReception, and 9 more.
+src/services/taskNotificationService.ts(67,9): error TS2322: Type '"task"' is not assignable to type '"workflow" | "system" | "assignation" | "rappel" | "echeance" | "courrier"'.
+src/store/slices/entitesSlice.ts(24,5): error TS2740: Type 'RejectWithValue<unknown, unknown>' is missing the following properties from type 'EntiteOrganisationnelle[]': length, pop, push, concat, and 29 more.

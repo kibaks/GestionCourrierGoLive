@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ⚠️ RÈGLES TEMPORAIRES POUR LA MIGRATION
+    // Ces règles permettent l'accès complet pendant la phase de migration
+    // À REMPLACER par les règles complètes après la migration
+    
+    // Permettre l'accès complet pour la migration (mode développement)
+    // En production, remplacez par les règles de firestoreRules.md
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

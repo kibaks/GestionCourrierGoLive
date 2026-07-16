@@ -1,0 +1,31 @@
+rules_version = '2';
+
+// Règles de sécurité Firebase Storage
+// ⚠️ ATTENTION : Ces règles sont permissives pour le développement
+// Pour la production, vous devez les sécuriser davantage
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Règle pour les fichiers des courriers
+    // Permet l'upload et la lecture pour tous les utilisateurs authentifiés
+    // En développement, on permet l'accès sans authentification
+    match /courriers/{courrierId}/fichiers/{fileName} {
+      // Permettre la lecture à tous (pour le développement)
+      allow read: if true;
+      
+      // Permettre l'upload à tous (pour le développement)
+      // En production, remplacer par : allow write: if request.auth != null;
+      allow write: if true;
+      
+      // Limiter la taille des fichiers à 10 MB
+      allow create: if request.resource.size < 10 * 1024 * 1024;
+    }
+    
+    // Règle par défaut : refuser tout le reste
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

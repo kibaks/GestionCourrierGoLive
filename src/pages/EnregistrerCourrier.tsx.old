@@ -1,0 +1,1898 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import ReactDOM from 'react-dom';
+import { useAuth } from '../context/AuthContext';
+import { courrierService } from '../services/courrierService';
+import { courrierFolderService } from '../services/courrierFolderService';
+import { laravelApiService } from '../services/laravelApiService';
+import { directionService } from '../services/directionService';
+import { entiteOrganisationnelleService } from '../services/entiteOrganisationnelleService';
+import { entiteTypeService } from '../services/entiteTypeService';
+import { scannerService, Scanner, DEFAULT_SCAN_SETTINGS, type ScanSettings, type ScanPageSize } from '../services/scannerService';
+import { userSettingsService } from '../services/userSettingsService';
+import jsPDF from 'jspdf';
+import { testCourrierService } from '../services/testCourrierService';
+import { TypeCourrier, Priorite, DossierFichier, SensCourrier, CourrierFolder, Role, Permission } from '../types';
+import { dossierFichierService } from '../services/dossierFichierService';
+import { formulaireCourrierService, ExtraFieldConfig, ExtraFieldsBySensAndType, FormStructure, urgencyOptionLabelToPriorite, prioriteToUrgencyOptionLabel } from '../services/formulaireCourrierService';
+// import { notificationService } from '../services/notificationService'; // Désactivé - Firestore
+import { adminService } from '../services/adminService';
+import { MaterialDateTimeField } from '../components/MaterialDateTimeField';
+import { Slider } from '@mui/material';
+import CustomDialog, { DialogOptions } from '../components/CustomDialog';
+import SearchableSelect from '../components/SearchableSelect';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { 
+  faCheckCircle, faFilePdf, faSpinner, faFileAlt, faExclamationTriangle,
+  faTextWidth, faAlignLeft, faCalendar, faAt, faHashtag, faPhone, faList,
+  faCheckSquare, faToggleOn, faFileUpload, faLink, faUser, faBuilding,
+  faFile, faClock, faMapMarkerAlt, faGlobe, faTag, faInfoCircle,
+  faQuestionCircle, faExclamationCircle, faStar, faHeart, faFlag,
+  faBookmark, faBell, faCog, faKey, faLock, faUnlock, faSearch,
+  faFilter, faHome, faCar, faPlane, faTrain, faShip, faBicycle,
+  faMotorcycle, faBus, faTaxi, faTruck, faMoneyBill, faCreditCard,
+  faWallet, faChartLine, faTable, faVideo, faMusic, faFilm,
+  faGamepad, faShield, faGem, faCrown, faTrophy, faMedal,
+  faAward, faCertificate, faGraduationCap, faBook, faNewspaper,
+  faDownload, faUpload, faShare, faPaperclip, faFolder, faFolderOpen,
+  faDatabase, faServer, faWifi, faBatteryFull, faPlug, faLightbulb,
+  faFire, faWater, faRecycle, faArchive, faBox, faBoxOpen, faGift,
+  faShoppingCart, faStore, faBriefcase, faSuitcase, faCoins,
+  faDollarSign, faEuroSign, faPoundSign, faYenSign, faRubleSign,
+  faEnvelope, faEnvelopeOpen, faUsers, faChevronRight, faChevronLeft,
+  faPrint, faImage, faCheck, faTimes, faPlus, faTrash, faFileWord,
+  faFileExcel, faFileImage, faChevronDown, faCopy, faPaste, faSquare,
+  faEye, faLayerGroup, faEdit, faArrowRight, faArrowLeft, faExternalLinkAlt,
+  faSave, faFolderPlus, faUserCircle, faAddressCard, faIdCard,
+  faStickyNote, faClipboard, faSignature, faStamp, faPaperPlane,
+  faInbox, faSignOutAlt, faReply, faReplyAll, faForward, faShareAlt,
+  faCloud, faCloudUploadAlt, faCloudDownloadAlt, faSync, faSyncAlt,
+  faHistory, faRedo, faUndo, faEraser, faHighlighter, faMarker,
+  faThumbtack, faPushpin, faScissors, faCut,
+  faClipboardCheck, faClipboardList, faTasks, faListAlt,
+  faListOl, faListUl, faIndent, faOutdent, faAlignCenter,
+  faAlignJustify, faAlignRight, faBold, faItalic, faUnderline,
+  faStrikethrough, faSuperscript, faSubscript, faQuoteLeft,
+  faQuoteRight, faCode, faTerminal, faKeyboard, faDesktop,
+  faMobile, faTablet, faLaptop, faTv, faCamera, faVideoSlash,
+  faMicrophone, faMicrophoneSlash, faVolumeUp, faVolumeDown,
+  faVolumeMute, faPlay, faPause, faStop, faStepForward,
+  faStepBackward, faFastForward, faFastBackward, faCompress,
+  faExpand, faExpandArrowsAlt, faCompressArrowsAlt, faArrowsAlt,
+  faArrowsAltH, faArrowsAltV, faExchangeAlt,
+  faRandom, faRetweet, faShuffle, faRedoAlt, faUndoAlt,
+  faProjectDiagram, faCodeBranch
+} from '@fortawesome/free-solid-svg-icons';
+
+// Fonction pour vérifier si l'utilisateur a une permission spécifique
+const hasPermission = (permission: Permission): boolean => {
+  const { user } = useAuth();
+  if (!user) return false;
+  
+  // Super admin et DG ont toutes les permissions
+  if (user.role === Role.SUPER_ADMIN || user.role === Role.DIRECTEUR_GENERAL) {
+    return true;
+  }
+  
+  // Vérifier les permissions de l'utilisateur
+  const userFromList = adminService.getUserById(user.id);
+  if (!userFromList) return false;
+  
+  // Vérifier si l'utilisateur a la permission
+  return userFromList.permissions?.includes(permission) || false;
+};
+
+// Champs de base à exclure des champs dynamiques (pour éviter les doublons)
+const CORE_FIELDS = ['type', 'expediteur', 'destinataire', 'objet'];
+
+const DRAFT_STORAGE_KEY = 'gestioncourrier_enregistrer_draft';
+const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
+
+const getSectionsFor = (
+  config: ExtraFieldsBySensAndType,
+  sens: SensCourrier,
+  type: TypeCourrier
+): FormStructure => config?.[sens]?.[type] || [];
+
+// --- HELPERS HORS COMPOSANT ---
+
+const inputBaseClass = 'w-full px-2.5 py-2 bg-neutral-50 border border-neutral-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition-all text-sm';
+
+const getColSpanClass = (width: number): string => {
+  const colMap: Record<number, string> = { 1: 'col-span-1', 2: 'col-span-2', 3: 'col-span-3', 4: 'col-span-4', 5: 'col-span-5', 6: 'col-span-6', 7: 'col-span-7', 8: 'col-span-8', 9: 'col-span-9', 10: 'col-span-10', 11: 'col-span-11', 12: 'col-span-12' };
+  return colMap[width] || 'col-span-6';
+};
+
+// --- COMPOSANT APERÇU PDF ---
+
+const PdfPreviewCanvas: React.FC<{ url: string; fillContainer?: boolean; showPageLabel?: boolean }> = ({ url, fillContainer = false, showPageLabel = true }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [containerSize, setContainerSize] = useState<{ w: number; h: number } | null>(null);
+  const [numPages, setNumPages] = useState<number>(1);
+
+  useEffect(() => {
+    if (!url) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    const renderPdf = async () => {
+      try {
+        const res = await fetch(url);
+        const data = await res.arrayBuffer();
+        const pdfjsLib = await import('pdfjs-dist');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+        
+        const doc = await pdfjsLib.getDocument({ data }).promise;
+        if (cancelled) return;
+        setNumPages(doc.numPages);
+        const page = await doc.getPage(1);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const context = canvas.getContext('2d');
+        if (context) {
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          await page.render({ canvasContext: context, viewport, canvas }).promise;
+        }
+      } catch (e: any) {
+        if (!cancelled) setError("Erreur de chargement du PDF");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    renderPdf();
+    return () => { cancelled = true; };
+  }, [url]);
+
+  return (
+    <div ref={containerRef} className="w-full h-full flex flex-col items-center justify-center bg-gray-100 p-4 rounded">
+      {loading && <FontAwesomeIcon icon={faSpinner} spin size="2x" />}
+      {error && <p className="text-red-500">{error}</p>}
+      <canvas ref={canvasRef} className="max-w-full shadow-lg" />
+      {!loading && !error && showPageLabel && <p className="mt-2 text-xs text-gray-500">Page 1 / {numPages}</p>}
+    </div>
+  );
+};
+
+// --- COMPOSANT PRINCIPAL ---
+
+const EnregistrerCourrier: React.FC = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const canCreateSortant = user?.role === Role.SECRETAIRE || user?.role === Role.SUPER_ADMIN || user?.role === Role.DIRECTEUR_GENERAL;
+  
+  // États principaux
+  const [currentStep, setCurrentStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [directions, setDirections] = useState(directionService.getAllDirections());
+  const [services, setServices] = useState(directionService.getAllServices());
+  const [entities, setEntities] = useState(entiteOrganisationnelleService.getAllEntities().filter(e => e.actif !== false));
+  const [courrierFolders, setCourrierFolders] = useState<CourrierFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string>('');
+  const [scanners, setScanners] = useState<Scanner[]>([]);
+  const [selectedScanner, setSelectedScanner] = useState<string>('');
+  const [scanSettings, setScanSettings] = useState<ScanSettings>(DEFAULT_SCAN_SETTINGS);
+  const [documentPreview, setDocumentPreview] = useState<string | null>(null);
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [showScanPopout, setShowScanPopout] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [filesStructure, setFilesStructure] = useState<Map<string, DossierFichier>>(new Map());
+  const [dossiersTemp, setDossiersTemp] = useState<Map<string, { name: string; parentId?: string; items: Map<string, DossierFichier> }>>(new Map());
+  
+  // Configuration des champs de formulaire
+  const [extraFieldsConfig, setExtraFieldsConfig] = useState<ExtraFieldsBySensAndType>(
+    () => formulaireCourrierService.getConfig()
+  );
+  
+  // Dialog
+  const [dialog, setDialog] = useState<DialogOptions & { isOpen: boolean }>({
+    isOpen: false,
+    message: '',
+    type: 'info',
+    title: '',
+    confirmText: 'OK',
+    cancelText: 'Annuler',
+    onConfirm: undefined,
+    onCancel: undefined
+  });
+  
+  // Types d'entités actifs pour la cascade Organisation interne
+  const filterLevels = entiteTypeService.getActiveTypesForFilters();
+  
+  type CourrierFormData = {
+    sens: SensCourrier;
+    type: TypeCourrier;
+    dateReception: string;
+    expediteur: string;
+    destinataire: string;
+    objet: string;
+    direction?: string;
+    service?: string;
+    sousService?: string;
+    contenuCourrier?: string;
+    tailleDocumentScanne?: string;
+    // Champs spécifiques pour courrier INTERNE
+    serviceEmetteur?: string;
+    serviceDestinataire?: string;
+    // Champs spécifiques pour courrier EXTERNE
+    referenceExterne?: string;
+    referenceInterne?: string;
+    // Options de workflow et notifications
+    creerWorkflow?: boolean;
+    notifierDG?: boolean;
+    notifierResponsable?: boolean;
+    instructionsWorkflow?: string;
+    prioriteWorkflow?: 'BASSE' | 'NORMALE' | 'HAUTE' | 'URGENTE';
+    [key: string]: any;
+  };
+
+  const [formData, setFormData] = useState<CourrierFormData>({
+    sens: SensCourrier.ENTRANT,
+    type: TypeCourrier.INTERNE,
+    dateReception: new Date().toISOString().split('T')[0],
+    expediteur: '',
+    destinataire: '',
+    objet: '',
+    direction: '',
+    service: '',
+    sousService: '',
+    contenuCourrier: '',
+    // Options par défaut pour workflow et notifications
+    creerWorkflow: false,
+    notifierDG: true,
+    notifierResponsable: true,
+    instructionsWorkflow: '',
+    prioriteWorkflow: 'NORMALE'
+  });
+  
+  // Étapes du formulaire
+  const steps = [
+    { id: 1, title: 'Type', description: 'Type et classement' },
+    { id: 2, title: 'Informations', description: 'Détails du courrier' },
+    { id: 3, title: 'Workflow', description: 'Validation et notifications' },
+    { id: 4, title: 'Fichiers', description: 'Documents et dossiers' },
+    { id: 5, title: 'Confirmation', description: 'Vérification finale' }
+  ];
+  
+  const progressPercent = Math.round((currentStep / steps.length) * 100);
+
+  // Charger la configuration du formulaire
+  const [formConfig, setFormConfig] = useState<ExtraFieldsBySensAndType | null>(null);
+  const [loadingConfig, setLoadingConfig] = useState(true);
+
+  useEffect(() => {
+    const loadFormConfig = async () => {
+      try {
+        const config = await formulaireCourrierService.getConfig();
+        setFormConfig(config);
+      } catch (error) {
+        console.error('Erreur chargement configuration formulaire:', error);
+        setFormConfig(formulaireCourrierService.getDefaultConfig());
+      } finally {
+        setLoadingConfig(false);
+      }
+    };
+    loadFormConfig();
+  }, []);
+
+  // Obtenir les champs supplémentaires pour le sens et type actuels
+  const getExtraFields = () => {
+    if (!formConfig) return [];
+    return formConfig[formData.sens]?.[formData.type] || [];
+  };
+
+  // Obtenir les champs par défaut pour les courriers si aucun n'est configuré
+  const getDefaultFields = () => {
+    return [
+      {
+        id: 'default-section',
+        columns: [
+          {
+            id: 'default-column',
+            fields: [
+              {
+                id: 'dateReception',
+                name: 'dateReception',
+                label: 'Date de Réception',
+                type: 'date',
+                required: true,
+                placeholder: 'Sélectionnez la date de réception du courrier'
+              },
+              {
+                id: 'objet',
+                name: 'objet',
+                label: 'Objet du Courrier',
+                type: 'text',
+                required: true,
+                placeholder: formData.type === TypeCourrier.INTERNE 
+                  ? 'Saisissez l\'objet du courrier interne' 
+                  : 'Saisissez l\'objet du courrier externe'
+              },
+              ...(formData.type === TypeCourrier.INTERNE ? [
+                {
+                  id: 'urgence',
+                  name: 'urgence',
+                  label: 'Niveau d\'Urgence',
+                  type: 'number',
+                  required: false,
+                  placeholder: 'Définissez le niveau d\'urgence (1-5)'
+                },
+                {
+                  id: 'contenu',
+                  name: 'contenu',
+                  label: 'Contenu du Courrier',
+                  type: 'textarea',
+                  required: false,
+                  placeholder: 'Rédigez le contenu détaillé du courrier interne'
+                }
+              ] : []),
+              ...(formData.type === TypeCourrier.EXTERNE ? [
+                {
+                  id: 'expediteur',
+                  name: 'expediteur',
+                  label: 'Expéditeur',
+                  type: 'text',
+                  required: true,
+                  placeholder: 'Nom de l\'expéditeur externe'
+                },
+                {
+                  id: 'destinataire',
+                  name: 'destinataire',
+                  label: 'Destinataire',
+                  type: 'text',
+                  required: true,
+                  placeholder: 'Nom du destinataire'
+                },
+                {
+                  id: 'referenceExterne',
+                  name: 'referenceExterne',
+                  label: 'Référence Externe',
+                  type: 'text',
+                  required: false,
+                  placeholder: 'Référence du courrier externe'
+                }
+              ] : []),
+              ...(formData.sens === SensCourrier.SORTANT ? [
+                {
+                  id: 'referenceInterne',
+                  name: 'referenceInterne',
+                  label: 'Référence Interne',
+                  type: 'text',
+                  required: false,
+                  placeholder: 'Référence interne du courrier sortant'
+                }
+              ] : [])
+            ]
+          }
+        ]
+      }
+    ];
+  };
+
+  // Obtenir tous les champs à afficher (configurés ou par défaut)
+  const getAllFields = () => {
+    const extraFields = getExtraFields();
+    
+    if (extraFields.length > 0) {
+      return extraFields;
+    }
+    return getDefaultFields();
+  };
+
+  // S'assurer que la date de réception est toujours initialisée
+  useEffect(() => {
+    if (!formData.dateReception) {
+      setFormData(prev => ({
+        ...prev,
+        dateReception: new Date().toISOString().split('T')[0]
+      }));
+    }
+  }, []);
+
+  // Fonction pour suggérer l'assignation automatique basée sur le type de courrier
+  const getSuggestedAssignment = useCallback(() => {
+    if (!formData.direction && !formData.service) return null;
+    
+    // Règles d'assignation automatique (sans Firestore)
+    const users = adminService.getAllUsers().filter(u => u.actif !== false);
+    
+    // Pour les courriers urgents, assigner au DG
+    if (formData.prioriteWorkflow === 'URGENTE') {
+      // Désactivé - Utiliser le service localStorage par défaut
+      const dgUsers = users.filter(u => u.role === Role.DIRECTEUR_GENERAL);
+      if (dgUsers.length > 0) return { userId: dgUsers[0].id, reason: 'Priorité urgente - Assignation au Directeur Général' };
+    }
+    
+    // Pour les courriers externes entrants, assigner au directeur de la direction
+    if (formData.sens === SensCourrier.ENTRANT && formData.type === TypeCourrier.EXTERNE && formData.direction) {
+      const directeur = users.find(u => 
+        u.role === Role.DIRECTEUR && 
+        u.directions?.includes(formData.direction)
+      );
+      if (directeur) return { userId: directeur.id, reason: `Courrier externe entrant - Assignation au Directeur de ${formData.direction}` };
+    }
+    
+    // Pour les courriers internes, assigner au chef de service
+    if (formData.type === TypeCourrier.INTERNE && formData.service) {
+      const chefService = users.find(u => 
+        u.role === Role.CHEF_SERVICE && 
+        u.services?.includes(formData.service)
+      );
+      if (chefService) return { userId: chefService.id, reason: `Courrier interne - Assignation au Chef de Service ${formData.service}` };
+    }
+    
+    // Assignation par défaut au directeur de la direction
+    if (formData.direction) {
+      const directeur = users.find(u => 
+        u.role === Role.DIRECTEUR && 
+        u.directions?.includes(formData.direction)
+      );
+      if (directeur) return { userId: directeur.id, reason: `Assignation par défaut au Directeur de ${formData.direction}` };
+    }
+    
+    return null;
+  }, [formData.sens, formData.type, formData.direction, formData.service, formData.prioriteWorkflow]);
+
+  // Mettre à jour automatiquement l'assignation si un workflow est créé
+  useEffect(() => {
+    if (formData.creerWorkflow) {
+      const suggestion = getSuggestedAssignment();
+      if (suggestion) {
+        // On pourrait ajouter un champ pour l'assignation suggérée
+        console.log('Assignation suggérée:', suggestion);
+      }
+    }
+  }, [formData.creerWorkflow, getSuggestedAssignment]);
+  
+  // Fonction pour créer une notification via Laravel API
+  const createNotification = async (notification: {
+    userId: string;
+    type: string;
+    title: string;
+    message: string;
+    relatedId?: string;
+    relatedType?: string;
+    priority?: string;
+  }) => {
+    try {
+      if (laravelApiService.isConfigured()) {
+        // Utiliser l'API Laravel pour les notifications
+        await laravelApiService.createNotification({
+          userId: notification.userId,
+          type: notification.type as any,
+          title: notification.title,
+          message: notification.message,
+          relatedId: notification.relatedId,
+          relatedType: notification.relatedType as any,
+          priority: notification.priority as any,
+          createdAt: new Date().toISOString(),
+          read: false
+        });
+        console.log('Notification envoyée via API Laravel:', notification);
+      } else {
+        // Fallback: notification locale ou console
+        console.log('Notification locale (API Laravel non configurée):', notification);
+      }
+    } catch (error) {
+      console.warn('Erreur lors de la création de la notification:', error);
+      // Fallback: notification locale en cas d'erreur
+      console.log('Fallback notification locale:', notification);
+    }
+  };
+  
+  // Gérer les valeurs des champs supplémentaires avec gestion spéciale pour la date
+  const handleExtraFieldChange = (fieldId: string, value: any) => {
+    setFormData(prev => {
+      const updated = { ...prev, [fieldId]: value };
+      
+      // S'assurer que la date de réception est toujours valide
+      if (fieldId === 'dateReception' && (!value || value === '')) {
+        updated.dateReception = new Date().toISOString().split('T')[0];
+      }
+      
+      return updated;
+    });
+  };
+  
+  // Fonctions utilitaires
+  const showAlert = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info', title?: string) => {
+    setDialog({
+      isOpen: true,
+      message,
+      type,
+      title: title || (type === 'error' ? 'Erreur' : type === 'success' ? 'Succès' : type === 'warning' ? 'Attention' : 'Information'),
+      confirmText: 'OK',
+      cancelText: '',
+      onConfirm: () => closeDialog(),
+      onCancel: undefined
+    });
+  };
+  
+  const closeDialog = () => {
+    setDialog(prev => ({ ...prev, isOpen: false }));
+  };
+  
+  const saveDraft = () => {
+    try {
+      const payload = {
+        formData,
+        currentStep,
+        selectedFolderId,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
+      showAlert('Brouillon sauvegardé', 'success');
+    } catch {
+      // localStorage full ou indisponible
+    }
+  };
+  
+  const nextStep = () => {
+    if (currentStep < steps.length) {
+      setCurrentStep(currentStep + 1);
+    }
+  };
+  
+  const prevStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+    }
+  };
+  
+  const canGoToNextStep = () => {
+    if (currentStep === 1) {
+      return formData.sens && formData.type;
+    }
+    if (currentStep === 2) {
+      // Vérifier les champs paramétrés obligatoires ou par défaut
+      const allFields = getAllFields();
+      const requiredFields = allFields.flatMap(section => 
+        section.columns?.flatMap(column => 
+          column.fields?.filter(field => field.required) || []
+        ) || []
+      );
+      
+      // Vérifier que tous les champs obligatoires sont remplis
+      const allRequiredFilled = requiredFields.every(field => {
+        const value = formData[field.name];
+        return value !== undefined && value !== null && value !== '';
+      });
+      
+      return allRequiredFilled;
+    }
+    if (currentStep === 3) {
+      return true; // Étape workflow optionnelle
+    }
+    if (currentStep === 4) {
+      return selectedFiles.length > 0 || documentFile;
+    }
+    return true;
+  };
+  
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setLoading(true);
+    try {
+      // Logique d'enregistrement du courrier
+      const courrierData: any = {
+        ...formData,
+        files: selectedFiles,
+        folderId: selectedFolderId,
+        createdAt: new Date().toISOString(),
+        priorite: Priorite.NORMAL, // Valeur par défaut
+        enregistrePar: user?.id || 'system' // Utilisateur connecté
+      };
+      
+      const createdCourrier = await courrierService.createCourrier(courrierData);
+      
+      // Créer le workflow si demandé (avec API Laravel)
+      if (formData.creerWorkflow && formData.instructionsWorkflow) {
+        try {
+          // Obtenir l'assignation suggérée
+          const suggestedAssignment = getSuggestedAssignment();
+          const assigneA = suggestedAssignment?.userId || 
+                           (user?.role === Role.DIRECTEUR_GENERAL ? user.id : adminService.getAllUsers().find(u => u.role === Role.DIRECTEUR_GENERAL)?.id);
+          
+          // Utiliser l'API Laravel si configurée, sinon localStorage
+          if (laravelApiService.isConfigured()) {
+            await laravelApiService.createWorkflowEtape({
+              courrierId: createdCourrier.id,
+              etape: 'Validation initiale',
+              assigneA: assigneA || 'dg',
+              statut: 'EN_ATTENTE',
+              commentaire: formData.instructionsWorkflow,
+              ordre: 1
+            });
+            console.log('Workflow créé via API Laravel:', createdCourrier.id);
+          } else {
+            // Fallback localStorage
+            if (courrierService.createWorkflowEtape) {
+              courrierService.createWorkflowEtape({
+                id: `workflow_${Date.now()}`,
+                courrierId: createdCourrier.id,
+                etape: 'Validation initiale',
+                assigneA: assigneA || 'dg',
+                statut: 'EN_ATTENTE',
+                instructions: formData.instructionsWorkflow,
+                creePar: user?.id,
+                dateDebut: new Date(),
+                ordre: 1,
+                createdAt: new Date()
+              });
+            }
+            console.log('Workflow créé via localStorage:', createdCourrier.id);
+          }
+          
+          // Notifier le DG (via API Laravel)
+          if (formData.notifierDG) {
+            const dgUsers = adminService.getAllUsers().filter(u => u.role === Role.DIRECTEUR_GENERAL);
+            if (dgUsers.length > 0) {
+              await createNotification({
+                userId: dgUsers[0].id,
+                type: 'workflow',
+                title: 'Nouveau courrier nécessitant une validation',
+                message: `Le courrier ${createdCourrier.numero} - ${createdCourrier.objet} nécessite votre validation pour le workflow.`,
+                relatedId: createdCourrier.id,
+                relatedType: 'courrier',
+                priority: formData.prioriteWorkflow === 'URGENTE' ? 'urgent' : 
+                         formData.prioriteWorkflow === 'HAUTE' ? 'high' : 'normal'
+              });
+            }
+          }
+          
+          // Notifier le responsable de la direction/service (via API Laravel)
+          if (formData.notifierResponsable && (formData.direction || formData.service)) {
+            const responsables = adminService.getAllUsers().filter(u => 
+              (u.role === Role.DIRECTEUR || u.role === Role.CHEF_SERVICE) &&
+              u.actif !== false &&
+              ((formData.direction && u.directions?.includes(formData.direction)) ||
+               (formData.service && u.services?.includes(formData.service)))
+            );
+            
+            for (const responsable of responsables) {
+              await createNotification({
+                userId: responsable.id,
+                type: 'courrier',
+                title: 'Nouveau courrier enregistré',
+                message: `Un nouveau courrier ${createdCourrier.numero} a été enregistré dans votre direction.`,
+                relatedId: createdCourrier.id,
+                relatedType: 'courrier',
+                priority: 'normal'
+              });
+            }
+          }
+        } catch (workflowError) {
+          console.warn('Erreur lors de la création du workflow:', workflowError);
+        }
+      }
+      
+      showAlert('Courrier enregistré avec succès', 'success');
+      navigate('/courriers');
+    } catch (error) {
+      showAlert('Erreur lors de l\'enregistrement', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Effets
+  useEffect(() => {
+    const loadEntities = async () => {
+      try {
+        if (laravelApiService.isConfigured()) {
+          await Promise.all([
+            adminService.refreshUsersFromApi().catch(() => {}),
+            entiteOrganisationnelleService.refreshFromApi().catch(() => {}),
+            entiteTypeService.syncFromApi().catch(() => {}),
+            formulaireCourrierService.getConfigAsync().catch(() => {}),
+          ]);
+        } else {
+          directionService.initializeDemoData();
+          entiteOrganisationnelleService.initializeDemoData();
+        }
+      } finally {
+        setDirections(directionService.getAllDirections());
+        setServices(directionService.getAllServices());
+        setEntities(entiteOrganisationnelleService.getAllEntities().filter(e => e.actif !== false));
+      }
+    };
+    void loadEntities();
+  }, []);
+  
+  useEffect(() => {
+    formulaireCourrierService.getConfigAsync().then((config) => {
+      setExtraFieldsConfig(config);
+    }).catch(() => {
+      setExtraFieldsConfig(formulaireCourrierService.getConfig());
+    });
+  }, []);
+  
+  useEffect(() => {
+    if (!user?.id) return;
+    const loadFolderData = async () => {
+      try {
+        const [remoteFolders] = await Promise.all([
+          courrierFolderService.getFolders(user.id),
+        ]);
+        setCourrierFolders(remoteFolders);
+      } catch (error) {
+        console.warn('Erreur chargement des dossiers:', error);
+        setCourrierFolders([]);
+      }
+    };
+    void loadFolderData();
+  }, [user?.id]);
+
+  return (
+    <div className="min-h-screen bg-surface-100">
+      {/* Header professionnel */}
+      <div className="bg-white border-b border-surface-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-r from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-lg">
+                <FontAwesomeIcon icon={faEnvelope} className="text-white text-xl" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-surface-900">Enregistrement de Courrier</h1>
+                <p className="text-sm text-surface-600">Gestion professionnelle des correspondances</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/courriers')}
+              className="px-4 py-2 text-surface-600 hover:text-surface-900 hover:bg-surface-100 rounded-xl transition-colors flex items-center gap-2"
+            >
+              <FontAwesomeIcon icon={faArrowLeft} />
+              Retour
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Barre de progression professionnelle */}
+        <div className="bg-white rounded-2xl shadow-card border border-surface-200 p-8 mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-surface-700">Étape</span>
+                <span className="text-2xl font-bold text-primary-600">{currentStep}</span>
+                <span className="text-sm font-semibold text-surface-700">sur {steps.length}</span>
+              </div>
+              <div className="h-8 w-px bg-surface-300"></div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+                <span className="text-sm font-medium text-surface-600">En cours</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => saveDraft()}
+              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:from-amber-600 hover:to-orange-600 font-medium transition-all shadow-md flex items-center gap-2"
+            >
+              <FontAwesomeIcon icon={faSave} />
+              Sauvegarder
+            </button>
+          </div>
+
+          {/* Indicateurs d'étapes améliorés */}
+          <div className="relative">
+            <div className="flex items-center justify-between mb-8">
+              {steps.map((step, index) => (
+                <div key={step.id} className="flex flex-col items-center relative z-10">
+                  <div
+                    className={`w-16 h-16 rounded-full flex items-center justify-center text-lg font-bold transition-all duration-300 shadow-lg ${
+                      currentStep > step.id
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white scale-105'
+                        : currentStep === step.id
+                        ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white ring-4 ring-primary-100 scale-110 shadow-primary-200'
+                        : 'bg-surface-200 text-surface-500'
+                    }`}
+                  >
+                    {currentStep > step.id ? (
+                      <FontAwesomeIcon icon={faCheck} className="w-6 h-6" />
+                    ) : (
+                      <span>{step.id}</span>
+                    )}
+                  </div>
+                  <div className="mt-3 text-center max-w-[100px]">
+                    <div className={`text-sm font-bold mb-1 ${
+                      currentStep >= step.id ? 'text-surface-900' : 'text-surface-500'
+                    }`}>
+                      {step.title}
+                    </div>
+                    <div className="text-xs text-surface-600 leading-tight">{step.description}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {/* Ligne de connexion */}
+            <div className="absolute top-8 left-0 right-0 h-1 bg-surface-200 -z-10"></div>
+            <div 
+              className="absolute top-8 left-0 h-1 bg-gradient-to-r from-green-500 to-primary-600 transition-all duration-500 -z-10"
+              style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
+            ></div>
+          </div>
+
+          {/* Pourcentage de progression */}
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold text-surface-700">Progression globale</span>
+              <span className="text-2xl font-bold text-primary-600">{progressPercent}%</span>
+            </div>
+            <div className="w-full bg-surface-200 rounded-full h-3 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full transition-all duration-500 shadow-inner"
+                style={{ width: `${progressPercent}%` }}
+              >
+                <div className="h-full bg-white bg-opacity-30 animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      {/* Contenu du formulaire professionnel */}
+        <div className="bg-white rounded-2xl shadow-card border border-surface-200 overflow-hidden">
+          {/* Étape 1: Type et classement */}
+          {currentStep === 1 && (
+            <div className="p-8">
+              <div className="flex items-center gap-4 pb-6 border-b border-surface-200">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 flex items-center justify-center shadow-lg">
+                  <FontAwesomeIcon icon={faEnvelope} className="text-white text-xl" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-surface-900">Type et Classement</h2>
+                  <p className="text-sm text-surface-600">Définissez la nature et le sens du courrier</p>
+                </div>
+              </div>
+
+              {/* Cartes de sélection interactives */}
+              <div className="space-y-8 mt-8">
+                {/* Sélection du sens du courrier */}
+                <div className="space-y-4">
+                  <label className="flex items-center gap-3 text-lg font-bold text-surface-800 uppercase tracking-wide">
+                    <div className="w-10 h-10 bg-gradient-to-r from-primary-500 to-primary-600 rounded-xl flex items-center justify-center">
+                      <FontAwesomeIcon icon={faExchangeAlt} className="text-white" />
+                    </div>
+                    Sens du Courrier
+                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div
+                      onClick={() => setFormData(prev => ({ ...prev, sens: SensCourrier.ENTRANT }))}
+                      className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 ${
+                        formData.sens === SensCourrier.ENTRANT
+                          ? 'bg-gradient-to-r from-primary-50 to-primary-100 border-primary-500 shadow-md scale-102'
+                          : 'bg-white border-surface-200 hover:border-primary-300 hover:shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
+                          formData.sens === SensCourrier.ENTRANT
+                            ? 'bg-gradient-to-r from-primary-500 to-primary-600 shadow-md'
+                            : 'bg-surface-200'
+                        }`}>
+                          <FontAwesomeIcon icon={faInbox} className={`text-lg ${
+                            formData.sens === SensCourrier.ENTRANT ? 'text-white' : 'text-surface-600'
+                          }`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className={`text-base font-bold mb-1 ${
+                            formData.sens === SensCourrier.ENTRANT ? 'text-primary-900' : 'text-surface-800'
+                          }`}>Courrier Entrant</h3>
+                          <p className={`text-xs leading-relaxed line-clamp-2 ${
+                            formData.sens === SensCourrier.ENTRANT ? 'text-primary-700' : 'text-surface-600'
+                          }`}>
+                            Reçu de sources externes ou internes, nécessite un traitement
+                          </p>
+                        </div>
+                        {formData.sens === SensCourrier.ENTRANT && (
+                          <div className="absolute top-2 right-2 w-5 h-5 bg-primary-600 rounded-full flex items-center justify-center">
+                            <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      onClick={() => setFormData(prev => ({ ...prev, sens: SensCourrier.SORTANT }))}
+                      className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 ${
+                        formData.sens === SensCourrier.SORTANT
+                          ? 'bg-gradient-to-r from-emerald-50 to-green-50 border-emerald-500 shadow-md scale-102'
+                          : 'bg-white border-surface-200 hover:border-emerald-300 hover:shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
+                          formData.sens === SensCourrier.SORTANT
+                            ? 'bg-gradient-to-r from-emerald-600 to-green-600 shadow-md'
+                            : 'bg-surface-200'
+                        }`}>
+                          <FontAwesomeIcon icon={faSignOutAlt} className={`text-lg ${
+                            formData.sens === SensCourrier.SORTANT ? 'text-white' : 'text-surface-600'
+                          }`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className={`text-base font-bold mb-1 ${
+                            formData.sens === SensCourrier.SORTANT ? 'text-emerald-900' : 'text-surface-800'
+                          }`}>Courrier Sortant</h3>
+                          <p className={`text-xs leading-relaxed line-clamp-2 ${
+                            formData.sens === SensCourrier.SORTANT ? 'text-emerald-700' : 'text-surface-600'
+                          }`}>
+                            Envoyé vers des destinataires externes ou internes, nécessite validation
+                          </p>
+                        </div>
+                        {formData.sens === SensCourrier.SORTANT && (
+                          <div className="absolute top-2 right-2 w-5 h-5 bg-emerald-600 rounded-full flex items-center justify-center">
+                            <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sélection du type de courrier */}
+                <div className="space-y-4">
+                  <label className="flex items-center gap-3 text-lg font-bold text-surface-800 uppercase tracking-wide">
+                    <div className="w-10 h-10 bg-gradient-to-r from-primary-500 to-primary-600 rounded-xl flex items-center justify-center">
+                      <FontAwesomeIcon icon={faTag} className="text-white" />
+                    </div>
+                    Type de Courrier
+                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div
+                      onClick={() => setFormData(prev => ({ ...prev, type: TypeCourrier.INTERNE }))}
+                      className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 ${
+                        formData.type === TypeCourrier.INTERNE
+                          ? 'bg-gradient-to-r from-primary-50 to-primary-100 border-primary-500 shadow-md scale-102'
+                          : 'bg-white border-surface-200 hover:border-primary-300 hover:shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
+                          formData.type === TypeCourrier.INTERNE
+                            ? 'bg-gradient-to-r from-primary-500 to-primary-600 shadow-md'
+                            : 'bg-surface-200'
+                        }`}>
+                          <FontAwesomeIcon icon={faBuilding} className={`text-lg ${
+                            formData.type === TypeCourrier.INTERNE ? 'text-white' : 'text-surface-600'
+                          }`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className={`text-base font-bold mb-1 ${
+                            formData.type === TypeCourrier.INTERNE ? 'text-primary-900' : 'text-surface-800'
+                          }`}>Courrier Interne</h3>
+                          <p className={`text-xs leading-relaxed line-clamp-2 ${
+                            formData.type === TypeCourrier.INTERNE ? 'text-primary-700' : 'text-surface-600'
+                          }`}>
+                            Communication entre services et départements
+                          </p>
+                        </div>
+                        {formData.type === TypeCourrier.INTERNE && (
+                          <div className="absolute top-2 right-2 w-5 h-5 bg-primary-600 rounded-full flex items-center justify-center">
+                            <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      onClick={() => setFormData(prev => ({ ...prev, type: TypeCourrier.EXTERNE }))}
+                      className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 ${
+                        formData.type === TypeCourrier.EXTERNE
+                          ? 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-500 shadow-md scale-102'
+                          : 'bg-white border-surface-200 hover:border-amber-300 hover:shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
+                          formData.type === TypeCourrier.EXTERNE
+                            ? 'bg-gradient-to-r from-amber-600 to-orange-600 shadow-md'
+                            : 'bg-surface-200'
+                        }`}>
+                          <FontAwesomeIcon icon={faGlobe} className={`text-lg ${
+                            formData.type === TypeCourrier.EXTERNE ? 'text-white' : 'text-surface-600'
+                          }`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className={`text-base font-bold mb-1 ${
+                            formData.type === TypeCourrier.EXTERNE ? 'text-amber-900' : 'text-surface-800'
+                          }`}>Courrier Externe</h3>
+                          <p className={`text-xs leading-relaxed line-clamp-2 ${
+                            formData.type === TypeCourrier.EXTERNE ? 'text-amber-700' : 'text-surface-600'
+                          }`}>
+                            Correspondance avec entités extérieures
+                          </p>
+                        </div>
+                        {formData.type === TypeCourrier.EXTERNE && (
+                          <div className="absolute top-2 right-2 w-5 h-5 bg-amber-600 rounded-full flex items-center justify-center">
+                            <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Étape 2: Informations du courrier */}
+          {currentStep === 2 && (
+            <div className="p-8">
+              <div className="flex items-center gap-4 pb-6 border-b border-surface-200">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 flex items-center justify-center shadow-lg">
+                  <FontAwesomeIcon icon={faFileAlt} className="text-white text-xl" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-surface-900">Informations du Courrier</h2>
+                  <p className="text-sm text-surface-600">
+                    {formData.type === TypeCourrier.INTERNE 
+                      ? 'Renseignez les détails du courrier interne' 
+                      : 'Renseignez les détails du courrier externe'
+                    }
+                  </p>
+                </div>
+              </div>
+
+              {/* Champs configurés ou par défaut - Toujours afficher */}
+              <div className="mt-8 space-y-6">
+                <div>
+                  <div className="flex flex-col space-y-6">
+                    <div className="flex items-center gap-3 pb-4 border-b border-surface-200">
+                  <div className="w-10 h-10 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl flex items-center justify-center">
+                    <FontAwesomeIcon icon={faCog} className="text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-surface-900">
+                      {getExtraFields().length > 0 
+                        ? `Champs du Courrier (${formData.sens} - ${formData.type})`
+                        : `Champs par défaut (${formData.sens} - ${formData.type})`
+                      }
+                    </h3>
+                    <p className="text-sm text-surface-600">
+                      {getAllFields().flatMap(s => s.columns?.flatMap(c => c.fields) || []).length} champ(s) à renseigner
+                      {getExtraFields().length === 0 && (
+                        <span className="ml-2 text-indigo-600 font-medium">
+                          (Configuration par défaut - aucun champ paramétré)
+                        </span>
+                      )}
+                      {loadingConfig && (
+                        <span className="ml-2 text-amber-600 font-medium">
+                          (Chargement de la configuration...)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-6">
+                    {getAllFields().map((section) => (
+                      <div key={section.id} className="space-y-4">
+                        {/* Afficher le titre de section si existant et différent de 'Infos' */}
+                        {section.label && section.label !== 'Infos' && (
+                          <h4 className="text-lg font-bold text-surface-900 border-b border-surface-200 pb-2">
+                            {section.label}
+                          </h4>
+                        )}
+                        
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          {section.columns?.map((column) => (
+                            <div key={column.id} className="space-y-4">
+                              {column.fields?.map((field) => (
+                                <div key={field.id} className="space-y-3">
+                                  <label className="flex items-center gap-2 text-sm font-bold text-surface-700 uppercase tracking-wide">
+                                    <FontAwesomeIcon icon={faTag} className="text-indigo-500" />
+                                    {field.label}
+                                    {field.required && (
+                                      <span className="text-red-500 text-xs ml-1">*</span>
+                                    )}
+                                  </label>
+                                  
+                                  {/* Champ de type DATE ou DATETIME avec Material Design */}
+                                  {(field.type === 'date' || field.type === 'datetime') && (
+                                  <div className="bg-white rounded-2xl border-2 border-surface-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                    {/* Utiliser MaterialDateTimeField pour le style Material Design */}
+                                    <MaterialDateTimeField
+                                      value={
+                                        formData[field.name] 
+                                          ? new Date(formData[field.name]) 
+                                          : new Date() // Utiliser la date du jour si vide
+                                      }
+                                      onChange={(date) => {
+                                        const dateString = date ? date.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+                                        handleExtraFieldChange(field.name, dateString);
+                                      }}
+                                      label={field.label}
+                                      className="w-full"
+                                      required={field.required}
+                                    />
+                                    
+                                    <div className="mt-3 text-xs text-surface-600 flex items-center gap-2 bg-surface-50 p-2 rounded-lg">
+                                      <FontAwesomeIcon icon={faCalendar} className="text-indigo-500" />
+                                      {field.placeholder || `Sélectionnez la date de ${field.label.toLowerCase()}`}
+                                    </div>
+                                    {field.required && !formData[field.name] && (
+                                      <p className="text-xs text-red-500 flex items-center gap-1 mt-2 bg-red-50 p-2 rounded-lg">
+                                        <FontAwesomeIcon icon={faExclamationTriangle} className="w-3 h-3" />
+                                        Champ obligatoire - Veuillez sélectionner une date
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Champ de type URGENCY avec Slider Material Design */}
+                                {(field.name.toLowerCase().includes('urgenc') || field.label.toLowerCase().includes('urgenc')) && (
+                                  <div className="bg-white rounded-2xl border-2 border-surface-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                                    <div className="mb-4">
+                                      <div className="flex items-center justify-between mb-3">
+                                        <span className="text-sm font-medium text-surface-700 flex items-center gap-2">
+                                          <FontAwesomeIcon icon={faExclamationTriangle} className="text-amber-500" />
+                                          {field.label}
+                                        </span>
+                                        <span className="text-sm font-bold text-primary-600 bg-primary-50 px-3 py-1 rounded-full">
+                                          {formData[field.name] || 3}/5
+                                        </span>
+                                      </div>
+                                      <Slider
+                                        value={formData[field.name] || 3}
+                                        onChange={(e, value) => handleExtraFieldChange(field.name, value)}
+                                        min={1}
+                                        max={5}
+                                        step={1}
+                                        marks={[
+                                          { value: 1, label: 'Très faible' },
+                                          { value: 2, label: 'Faible' },
+                                          { value: 3, label: 'Moyenne' },
+                                          { value: 4, label: 'Élevée' },
+                                          { value: 5, label: 'Urgente' }
+                                        ]}
+                                        valueLabelDisplay="auto"
+                                        sx={{
+                                          '& .MuiSlider-thumb': {
+                                            backgroundColor: '#3b82f6',
+                                            width: 20,
+                                            height: 20,
+                                            '&:hover': {
+                                              boxShadow: '0 0 0 8px rgba(59, 130, 246, 0.1)',
+                                            },
+                                          },
+                                          '& .MuiSlider-track': {
+                                            backgroundColor: '#3b82f6',
+                                            height: 6,
+                                          },
+                                          '& .MuiSlider-rail': {
+                                            backgroundColor: '#e2e8f0',
+                                            height: 6,
+                                          },
+                                          '& .MuiSlider-mark': {
+                                            backgroundColor: '#94a3b8',
+                                            width: 8,
+                                            height: 8,
+                                            '&.MuiSlider-markActive': {
+                                              backgroundColor: '#3b82f6',
+                                              width: 10,
+                                              height: 10,
+                                            },
+                                          },
+                                          '& .MuiSlider-markLabel': {
+                                            fontSize: '0.75rem',
+                                            color: '#64748b',
+                                            '&.MuiSlider-markLabelActive': {
+                                              color: '#3b82f6',
+                                              fontWeight: 'bold',
+                                            },
+                                          },
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-surface-600 bg-amber-50 p-3 rounded-lg">
+                                      <FontAwesomeIcon icon={faInfoCircle} className="text-amber-500" />
+                                      <span>Définissez le niveau d'urgence du courrier (1 = Très faible, 5 = Urgent)</span>
+                                    </div>
+                                    {field.required && (
+                                      <p className="text-xs text-red-500 flex items-center gap-1 mt-2 bg-red-50 p-2 rounded-lg">
+                                        <FontAwesomeIcon icon={faExclamationTriangle} className="w-3 h-3" />
+                                        Champ obligatoire
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Autres types de champs */}
+                                {!(field.type === 'date' || field.type === 'datetime') && 
+                                 !(field.name.toLowerCase().includes('urgenc') || field.label.toLowerCase().includes('urgenc')) && (
+                                  <div>
+                                    {field.type === 'text' && (
+                                        <div className="bg-white rounded-2xl border-2 border-surface-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="relative">
+                                          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                            <FontAwesomeIcon icon={faTextWidth} className="text-surface-400" />
+                                          </div>
+                                          <input
+                                            type="text"
+                                            value={formData[field.name] || ''}
+                                            onChange={(e) => handleExtraFieldChange(field.name, e.target.value)}
+                                            placeholder={field.placeholder || `Saisissez ${field.label.toLowerCase()}`}
+                                            className={`w-full pl-12 pr-4 py-3 border-2 border-surface-200 rounded-xl focus:border-primary-500 focus:outline-none transition-all ${
+                                              field.required && !formData[field.name] ? 'border-red-300 bg-red-50' : 'bg-white'
+                                            }`}
+                                            required={field.required}
+                                          />
+                                        </div>
+                                        {field.required && !formData[field.name] && (
+                                          <p className="text-xs text-red-500 flex items-center gap-1 mt-2 bg-red-50 p-2 rounded-lg">
+                                            <FontAwesomeIcon icon={faExclamationTriangle} className="w-3 h-3" />
+                                            Champ obligatoire
+                                          </p>
+                                        )}
+                                      </div>
+                                    )}
+                                    {field.type === 'textarea' && (
+                                      <div className="bg-white rounded-2xl border-2 border-surface-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                        <ReactQuill
+                                          value={formData[field.name] || ''}
+                                          onChange={(content) => handleExtraFieldChange(field.name, content)}
+                                          placeholder={field.placeholder || `Rédigez ${field.label.toLowerCase()}`}
+                                          theme="snow"
+                                          className="bg-white rounded-xl"
+                                          modules={{
+                                            toolbar: [
+                                              [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+                                              ['bold', 'italic', 'underline', 'strike'],
+                                              [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                                              ['link'],
+                                              ['clean']
+                                            ]
+                                          }}
+                                          formats={[
+                                            'header',
+                                            'bold', 'italic', 'underline', 'strike',
+                                            'list', 'bullet',
+                                            'link'
+                                          ]}
+                                        />
+                                        {field.required && !formData[field.name] && (
+                                          <p className="text-xs text-red-500 flex items-center gap-1 mt-2 bg-red-50 p-2 rounded-lg">
+                                            <FontAwesomeIcon icon={faExclamationTriangle} className="w-3 h-3" />
+                                            Champ obligatoire
+                                          </p>
+                                        )}
+                                      </div>
+                                    )}
+                                    {field.type === 'number' && (
+                                      <div className="bg-white rounded-2xl border-2 border-surface-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="relative">
+                                          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                            <FontAwesomeIcon icon={faHashtag} className="text-surface-400" />
+                                          </div>
+                                          <input
+                                            type="number"
+                                            value={formData[field.name] || ''}
+                                            onChange={(e) => handleExtraFieldChange(field.name, parseInt(e.target.value) || 0)}
+                                            placeholder={field.placeholder || `Saisissez ${field.label.toLowerCase()}`}
+                                            className="w-full pl-12 pr-4 py-3 border-2 border-surface-200 rounded-xl focus:border-primary-500 focus:outline-none bg-white"
+                                            required={field.required}
+                                          />
+                                        </div>
+                                        {field.required && !formData[field.name] && (
+                                          <p className="text-xs text-red-500 flex items-center gap-1 mt-2 bg-red-50 p-2 rounded-lg">
+                                            <FontAwesomeIcon icon={faExclamationTriangle} className="w-3 h-3" />
+                                            Champ obligatoire
+                                          </p>
+                                        )}
+                                      </div>
+                                    )}
+                                    {field.type === 'select' && (
+                                      <div className="bg-white rounded-2xl border-2 border-surface-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                        <SearchableSelect
+                                          value={formData[field.name] || ''}
+                                          onChange={(value) => handleExtraFieldChange(field.name, value)}
+                                          placeholder={field.placeholder || `Sélectionnez ${field.label.toLowerCase()}`}
+                                          options={field.options || []}
+                                        />
+                                        {field.required && !formData[field.name] && (
+                                          <p className="text-xs text-red-500 flex items-center gap-1 mt-2 bg-red-50 p-2 rounded-lg">
+                                            <FontAwesomeIcon icon={faExclamationTriangle} className="w-3 h-3" />
+                                            Champ obligatoire
+                                          </p>
+                                        )}
+                                      </div>
+                                    )}
+                                    {field.type === 'checkbox' && (
+                                      <div className="bg-white rounded-2xl border-2 border-surface-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                        <label className="flex items-center gap-3 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={formData[field.name] || false}
+                                            onChange={(e) => handleExtraFieldChange(field.name, e.target.checked)}
+                                            className="w-5 h-5 text-primary-600 border-2 border-surface-300 rounded focus:ring-primary-500 focus:border-primary-500"
+                                          />
+                                          <span className="text-sm text-surface-700">{field.label}</span>
+                                        </label>
+                                      </div>
+                                    )}
+                                    {field.type === 'file' && (
+                                      <div className="bg-white rounded-2xl border-2 border-surface-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="border-2 border-dashed border-surface-300 rounded-xl p-6 text-center hover:border-primary-400 transition-colors">
+                                          <FontAwesomeIcon icon={faFileUpload} className="text-4xl text-surface-400 mb-3" />
+                                          <p className="text-sm text-surface-600 mb-2">
+                                            {field.placeholder || `Glissez-déposez ${field.label.toLowerCase()} ou cliquez pour parcourir`}
+                                          </p>
+                                          <input
+                                            type="file"
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0];
+                                              if (file) {
+                                                handleExtraFieldChange(field.name, file);
+                                              }
+                                            }}
+                                            className="hidden"
+                                            id={`file-${field.id}`}
+                                          />
+                                          <label
+                                            htmlFor={`file-${field.id}`}
+                                            className="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-xl hover:bg-primary-700 cursor-pointer transition-colors"
+                                          >
+                                            <FontAwesomeIcon icon={faFolderOpen} className="mr-2" />
+                                            Parcourir
+                                          </label>
+                                        </div>
+                                        {formData[field.name] && (
+                                          <div className="mt-3 text-xs text-surface-600 bg-surface-50 p-2 rounded-lg">
+                                            Fichier sélectionné: {(formData[field.name] as File)?.name}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                    {field.type === 'url' && (
+                                      <div className="bg-white rounded-2xl border-2 border-surface-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="relative">
+                                          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                            <FontAwesomeIcon icon={faLink} className="text-surface-400" />
+                                          </div>
+                                          <input
+                                            type="url"
+                                            value={formData[field.name] || ''}
+                                            onChange={(e) => handleExtraFieldChange(field.name, e.target.value)}
+                                            placeholder={field.placeholder || `Saisissez l'URL ${field.label.toLowerCase()}`}
+                                            className="w-full pl-12 pr-4 py-3 border-2 border-surface-200 rounded-xl focus:border-primary-500 focus:outline-none bg-white"
+                                            required={field.required}
+                                          />
+                                        </div>
+                                        {field.required && !formData[field.name] && (
+                                          <p className="text-xs text-red-500 flex items-center gap-1 mt-2 bg-red-50 p-2 rounded-lg">
+                                            <FontAwesomeIcon icon={faExclamationTriangle} className="w-3 h-3" />
+                                            Champ obligatoire
+                                          </p>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+        {/* Étape 3: Workflow et Notifications */}
+          {currentStep === 3 && (
+            <div className="p-8">
+              <div className="flex items-center gap-4 pb-6 border-b border-slate-200">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 flex items-center justify-center shadow-lg">
+                  <FontAwesomeIcon icon={faProjectDiagram} className="text-white text-xl" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Workflow et Notifications</h2>
+                  <p className="text-sm text-slate-600">Configurez le processus de validation et les notifications</p>
+                </div>
+              </div>
+
+              <div className="space-y-8">
+                {/* Option de création de workflow */}
+                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-2xl p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl flex items-center justify-center">
+                        <FontAwesomeIcon icon={faCodeBranch} className="text-white text-xl" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-purple-900">Créer un Workflow</h3>
+                        <p className="text-sm text-purple-700">Activez pour soumettre ce courrier à un processus de validation</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.creerWorkflow || false}
+                        onChange={(e) => setFormData(prev => ({ ...prev, creerWorkflow: e.target.checked }))}
+                        className="sr-only peer"
+                      />
+                      <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-600 peer-checked:to-indigo-600"></div>
+                    </label>
+                  </div>
+
+                  {formData.creerWorkflow && (
+                    <div className="space-y-6 mt-6">
+                      {/* Instructions du workflow */}
+                      <div>
+                        <label className="flex items-center gap-2 text-sm font-bold text-purple-800 mb-3">
+                          <FontAwesomeIcon icon={faStickyNote} className="text-purple-600" />
+                          Instructions pour le validateur
+                        </label>
+                        <textarea
+                          value={formData.instructionsWorkflow || ''}
+                          onChange={(e) => setFormData(prev => ({ ...prev, instructionsWorkflow: e.target.value }))}
+                          className="w-full px-4 py-3 bg-white border-2 border-purple-200 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all text-sm"
+                          rows={4}
+                          placeholder="Décrivez les actions attendues pour la validation de ce courrier..."
+                        />
+                      </div>
+
+                      {/* Priorité du workflow */}
+                      <div>
+                        <label className="flex items-center gap-2 text-sm font-bold text-purple-800 mb-3">
+                          <FontAwesomeIcon icon={faFlag} className="text-purple-600" />
+                          Priorité du workflow
+                        </label>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {[
+                            { value: 'BASSE', label: 'Basse', color: 'from-gray-500 to-gray-600' },
+                            { value: 'NORMALE', label: 'Normale', color: 'from-blue-500 to-blue-600' },
+                            { value: 'HAUTE', label: 'Haute', color: 'from-orange-500 to-orange-600' },
+                            { value: 'URGENTE', label: 'Urgente', color: 'from-red-500 to-red-600' }
+                          ].map((priority) => (
+                            <button
+                              key={priority.value}
+                              type="button"
+                              onClick={() => setFormData(prev => ({ ...prev, prioriteWorkflow: priority.value as any }))}
+                              className={`p-3 rounded-xl border-2 transition-all ${
+                                formData.prioriteWorkflow === priority.value
+                                  ? `bg-gradient-to-r ${priority.color} text-white border-transparent shadow-lg`
+                                  : 'bg-white border-purple-200 hover:border-purple-300 text-purple-900'
+                              }`}
+                            >
+                              <div className="text-sm font-bold">{priority.label}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Options de notifications */}
+                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border-2 border-blue-200 rounded-2xl p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-xl flex items-center justify-center">
+                      <FontAwesomeIcon icon={faBell} className="text-white text-xl" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-blue-900">Notifications Automatiques</h3>
+                      <p className="text-sm text-blue-700">Configurez qui doit être notifié lors de l'enregistrement</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Notifier le DG */}
+                    <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-blue-200">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg flex items-center justify-center">
+                          <FontAwesomeIcon icon={faUser} className="text-white" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-blue-900">Notifier le Directeur Général</h4>
+                          <p className="text-sm text-blue-700">Le DG sera notifié pour validation si un workflow est créé</p>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.notifierDG || false}
+                          onChange={(e) => setFormData(prev => ({ ...prev, notifierDG: e.target.checked }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-blue-600 peer-checked:to-cyan-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Notifier le responsable */}
+                    <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-blue-200">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg flex items-center justify-center">
+                          <FontAwesomeIcon icon={faBuilding} className="text-white" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-blue-900">Notifier le Responsable</h4>
+                          <p className="text-sm text-blue-700">Le responsable de la direction/service sera notifié</p>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.notifierResponsable || false}
+                          onChange={(e) => setFormData(prev => ({ ...prev, notifierResponsable: e.target.checked }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-blue-600 peer-checked:to-cyan-600"></div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Informations complémentaires */}
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-gradient-to-r from-amber-600 to-orange-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <FontAwesomeIcon icon={faInfoCircle} className="text-white text-xl" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-amber-900 mb-2">Informations importantes</h3>
+                      <ul className="text-sm text-amber-800 space-y-2">
+                        <li className="flex items-start gap-2">
+                          <FontAwesomeIcon icon={faCheckCircle} className="text-amber-600 mt-0.5" />
+                          <span>Le workflow sera créé et assigné automatiquement (API Laravel si configurée)</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <FontAwesomeIcon icon={faCheckCircle} className="text-amber-600 mt-0.5" />
+                          <span>Les notifications seront envoyées via l'API Laravel</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <FontAwesomeIcon icon={faCheckCircle} className="text-amber-600 mt-0.5" />
+                          <span>Le courrier sera enregistré avec le statut "EN_ATTENTE_DG"</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <FontAwesomeIcon icon={faInfoCircle} className="text-amber-600 mt-0.5" />
+                          <span>Mode connecté - Les données sont synchronisées avec l'API Laravel</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+        {/* Étape 4: Fichiers et documents */}
+          {currentStep === 4 && (
+            <div className="p-8">
+              <div className="flex items-center gap-4 pb-6 border-b border-slate-200">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 flex items-center justify-center shadow-lg">
+                  <FontAwesomeIcon icon={faCloudUploadAlt} className="text-white text-xl" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Documents et Pièces Jointes</h2>
+                  <p className="text-sm text-slate-600">Ajoutez les fichiers associés au courrier</p>
+                </div>
+              </div>
+
+              {/* Zone de drag & drop */}
+              <div className="border-3 border-dashed border-slate-300 rounded-2xl p-12 text-center bg-gradient-to-br from-slate-50 to-slate-100 hover:border-emerald-500 hover:bg-emerald-50 transition-all cursor-pointer group">
+                <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg">
+                  <FontAwesomeIcon icon={faCloudUploadAlt} className="text-white text-3xl" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-3">Glissez-déposez vos fichiers</h3>
+                <p className="text-slate-600 mb-6">ou cliquez pour parcourir votre ordinateur</p>
+                <button
+                  type="button"
+                  className="px-8 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 font-bold transition-all shadow-lg flex items-center gap-3 mx-auto"
+                >
+                  <FontAwesomeIcon icon={faFolderPlus} />
+                  Parcourir les fichiers
+                </button>
+                <p className="text-xs text-slate-500 mt-4">Formats acceptés: PDF, DOC, DOCX, XLS, XLSX, JPG, PNG (Max 10MB)</p>
+              </div>
+
+              {/* Fichiers sélectionnés */}
+              {selectedFiles.length > 0 && (
+                <div className="mt-8">
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <FontAwesomeIcon icon={faFolderOpen} className="text-emerald-600" />
+                    Fichiers sélectionnés ({selectedFiles.length})
+                  </h3>
+                  <div className="space-y-3">
+                    {selectedFiles.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl group hover:shadow-md transition-all">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl flex items-center justify-center">
+                            <FontAwesomeIcon icon={faFile} className="text-white" />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-slate-900">{file.name}</p>
+                            <p className="text-sm text-slate-600">
+                              {(file.size / 1024 / 1024).toFixed(2)} MB • {file.type || 'Type inconnu'}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2"
+                          onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== index))}
+                        >
+                          <FontAwesomeIcon icon={faTrash} />
+                          Supprimer
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions supplémentaires */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
+                <button
+                  type="button"
+                  className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-all flex items-center gap-3"
+                >
+                  <FontAwesomeIcon icon={faCamera} className="text-blue-600" />
+                  <div className="text-left">
+                    <p className="font-semibold text-blue-900">Scanner</p>
+                    <p className="text-xs text-blue-700">Numériser un document</p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-xl hover:bg-purple-100 transition-all flex items-center gap-3"
+                >
+                  <FontAwesomeIcon icon={faSignature} className="text-purple-600" />
+                  <div className="text-left">
+                    <p className="font-semibold text-purple-900">Signature</p>
+                    <p className="text-xs text-purple-700">Ajouter une signature</p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-all flex items-center gap-3"
+                >
+                  <FontAwesomeIcon icon={faStamp} className="text-amber-600" />
+                  <div className="text-left">
+                    <p className="font-semibold text-amber-900">Tampon</p>
+                    <p className="text-xs text-amber-700">Ajouter un tampon</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Étape 5: Confirmation */}
+          {currentStep === 5 && (
+            <div className="p-8">
+              <div className="flex items-center gap-4 pb-6 border-b border-slate-200">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 flex items-center justify-center shadow-lg">
+                  <FontAwesomeIcon icon={faCheckCircle} className="text-white text-xl" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Confirmation et Validation</h2>
+                  <p className="text-sm text-slate-600">Vérifiez toutes les informations avant enregistrement</p>
+                </div>
+              </div>
+
+              {/* Alertes de confirmation */}
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-2xl p-6 flex items-start gap-4 mb-8">
+                <div className="w-12 h-12 bg-green-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <FontAwesomeIcon icon={faInfoCircle} className="text-white text-xl" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-green-900 mb-2">Prêt pour l'enregistrement</h3>
+                  <p className="text-green-700">Toutes les informations ont été vérifiées. Le courrier sera enregistré avec ces données.</p>
+                </div>
+              </div>
+
+              {/* Résumé détaillé */}
+              <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-8 border border-slate-200">
+                <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
+                    <FontAwesomeIcon icon={faClipboardList} className="text-white" />
+                  </div>
+                  Résumé Complet du Courrier
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <FontAwesomeIcon icon={faExchangeAlt} className="text-blue-600 text-xl" />
+                      <h4 className="font-bold text-slate-900">Type et Sens</h4>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Sens:</span>
+                        <span className="font-bold text-slate-900">{formData.sens === 'ENTRANT' ? '📥 Entrant' : '📤 Sortant'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Type:</span>
+                        <span className="font-bold text-slate-900">{formData.type === 'INTERNE' ? '🏢 Interne' : '🌍 Externe'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <FontAwesomeIcon icon={faCalendar} className="text-purple-600 text-xl" />
+                      <h4 className="font-bold text-slate-900">Date et Objet</h4>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Date:</span>
+                        <span className="font-bold text-slate-900">{formData.dateReception}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Objet:</span>
+                        <span className="font-bold text-slate-900 truncate">{formData.objet || '—'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <FontAwesomeIcon icon={faUsers} className="text-emerald-600 text-xl" />
+                      <h4 className="font-bold text-slate-900">Participants</h4>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Expéditeur:</span>
+                        <span className="font-bold text-slate-900 truncate">{formData.expediteur || '—'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Destinataire:</span>
+                        <span className="font-bold text-slate-900 truncate">{formData.destinataire || '—'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <FontAwesomeIcon icon={faFolderOpen} className="text-amber-600 text-xl" />
+                      <h4 className="font-bold text-slate-900">Documents</h4>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Fichiers:</span>
+                        <span className="font-bold text-slate-900">{selectedFiles.length} fichier(s)</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Section Workflow et Notifications */}
+                  {(formData.creerWorkflow || formData.notifierDG || formData.notifierResponsable) && (
+                    <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-6 border border-purple-200 shadow-sm">
+                      <div className="flex items-center gap-3 mb-3">
+                        <FontAwesomeIcon icon={faProjectDiagram} className="text-purple-600 text-xl" />
+                        <h4 className="font-bold text-purple-900">Workflow et Notifications</h4>
+                      </div>
+                      <div className="space-y-3">
+                        {formData.creerWorkflow && (
+                          <div className="flex items-center gap-2">
+                            <FontAwesomeIcon icon={faCheckCircle} className="text-purple-600" />
+                            <span className="text-purple-800">Workflow sera créé avec priorité {formData.prioriteWorkflow} (API Laravel)</span>
+                          </div>
+                        )}
+                        {formData.notifierDG && (
+                          <div className="flex items-center gap-2">
+                            <FontAwesomeIcon icon={faBell} className="text-purple-600" />
+                            <span className="text-purple-800">Directeur Général sera notifié (API Laravel)</span>
+                          </div>
+                        )}
+                        {formData.notifierResponsable && (
+                          <div className="flex items-center gap-2">
+                            <FontAwesomeIcon icon={faBell} className="text-purple-600" />
+                            <span className="text-purple-800">Responsable de direction/service sera notifié (API Laravel)</span>
+                          </div>
+                        )}
+                        {formData.instructionsWorkflow && (
+                          <div className="mt-3 p-3 bg-white rounded-lg border border-purple-200">
+                            <p className="text-sm text-purple-800">
+                              <strong>Instructions:</strong> {formData.instructionsWorkflow}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <FontAwesomeIcon icon={faBuilding} className="text-blue-600 text-xl" />
+                      <h4 className="font-bold text-slate-900">Organisation</h4>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Direction:</span>
+                        <span className="font-bold text-slate-900 truncate">{formData.direction || '—'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Service:</span>
+                        <span className="font-bold text-slate-900 truncate">{formData.service || '—'}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Boutons de navigation professionnels */}
+          <div className="bg-slate-50 border-t border-slate-200 p-6">
+            <div className="flex justify-between items-center">
+              <button
+                type="button"
+                onClick={currentStep === 1 ? () => navigate('/courriers') : prevStep}
+                className="px-6 py-3 bg-slate-200 text-slate-700 rounded-xl hover:bg-slate-300 transition-all flex items-center gap-3 font-bold"
+              >
+                <FontAwesomeIcon icon={faChevronLeft} />
+                {currentStep === 1 ? 'Annuler' : 'Précédent'}
+              </button>
+              
+              {currentStep < steps.length ? (
+                <button
+                  type="button"
+                  onClick={nextStep}
+                  disabled={!canGoToNextStep()}
+                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 font-bold shadow-lg transition-all"
+                >
+                  Suivant
+                  <FontAwesomeIcon icon={faChevronRight} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSubmit()}
+                  disabled={loading || !canGoToNextStep()}
+                  className="px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 font-bold shadow-lg transition-all"
+                >
+                  {loading ? (
+                    <>
+                      <FontAwesomeIcon icon={faSpinner} className="animate-spin" />
+                      Enregistrement en cours...
+                    </>
+                  ) : (
+                    <>
+                      <FontAwesomeIcon icon={faCheckCircle} />
+                      Enregistrer le Courrier
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Dialog personnalisé */}
+        <CustomDialog
+          isOpen={dialog.isOpen}
+          message={dialog.message}
+          type={dialog.type}
+          title={dialog.title}
+          confirmText={dialog.confirmText}
+          cancelText={dialog.cancelText}
+          onConfirm={dialog.onConfirm}
+          onCancel={dialog.onCancel}
+          onClose={closeDialog}
+        />
+      </div>
+    </div>
+  );
+};
+
+export default EnregistrerCourrier;
