@@ -14,6 +14,7 @@ import { directionService } from '../services/directionService';
 import { entiteOrganisationnelleService } from '../services/entiteOrganisationnelleService';
 import { entiteTypeService } from '../services/entiteTypeService';
 import { scannerService, checkScannerBackendHealth, Scanner, DEFAULT_SCAN_SETTINGS, type ScanSettings, type ScanFormat, type ScanPageSize } from '../services/scannerService';
+import { userSettingsService } from '../services/userSettingsService';
 import { TypeCourrier, Priorite, SensCourrier, CategorieCourrier, Role, EntiteOrganisationnelle, StatutCourrier, Courrier } from '../types';
 import { MaterialDateTimeField } from '../components/MaterialDateTimeField';
 import MaterialInput from '../components/MaterialInput';
@@ -446,7 +447,11 @@ const EnregistrerCourrierListe: React.FC = () => {
       .catch(() => setScanBackendStatus('error'));
     (async () => {
       try {
-        const detected = await scannerService.detectScanners();
+        const [savedScan, detected] = await Promise.all([
+          userSettingsService.getSettings<ScanSettings>('scan_settings', DEFAULT_SCAN_SETTINGS),
+          scannerService.detectScanners(),
+        ]);
+        setScanSettings(prev => ({ ...DEFAULT_SCAN_SETTINGS, ...prev, ...savedScan }));
         const list = detected.length > 0 ? detected : scannerService.getSavedScanners();
         setScanners(list);
         if (list.length > 0) setSelectedScanner(list[0].id);

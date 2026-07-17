@@ -985,10 +985,12 @@ const EnregistrerCourrier: React.FC = () => {
   const refreshScannersInModal = useCallback(async () => {
     setScannersLoading(true);
     try {
-      const [prefer, approach] = await Promise.all([
+      const [prefer, approach, savedScan] = await Promise.all([
         userSettingsService.getSettings<boolean>('scanner_prefer_system_driver', false),
         userSettingsService.getSettings<string>('scanner_detection_approach', 'auto'),
+        userSettingsService.getSettings<ScanSettings>('scan_settings', DEFAULT_SCAN_SETTINGS),
       ]);
+      setScanSettings(prev => ({ ...DEFAULT_SCAN_SETTINGS, ...prev, ...savedScan }));
       const detected = await scannerService.detectScanners(!!prefer, (approach === 'auto' || !approach ? undefined : approach as 'sane' | 'network' | 'system'));
       setScanners(detected);
       if (detected.length > 0 && !selectedScanner) setSelectedScanner(detected[0].id);
