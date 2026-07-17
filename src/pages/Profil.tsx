@@ -200,8 +200,8 @@ const Profil: React.FC = () => {
                     <input
                       type="email"
                       value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full pl-12 pr-4 py-3 bg-surface-50 border-2 border-surface-200 rounded-xl focus:ring-0 focus:border-primary-400 focus:bg-white transition-all"
+                      readOnly
+                      className="w-full pl-12 pr-4 py-3 bg-surface-100 border-2 border-surface-200 rounded-xl text-surface-500 cursor-not-allowed"
                     />
                   </div>
                 </div>

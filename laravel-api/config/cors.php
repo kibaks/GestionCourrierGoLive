@@ -15,8 +15,7 @@ return [
 
     'allowed_methods' => ['*'],
 
-    // En dev, on ouvre à tous les fronts (pas de cookies, auth par Bearer token)
-    'allowed_origins' => ['*'],
+    'allowed_origins' => array_filter(array_map('trim', explode(',', env('CORS_ALLOWED_ORIGINS', env('FRONTEND_URL', 'http://localhost:5173'))))),
 
     'allowed_origins_patterns' => [],
 
