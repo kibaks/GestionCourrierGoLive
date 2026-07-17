@@ -153,6 +153,8 @@ class UsersController extends Controller
             'service' => $user->service,
             'entiteId' => $user->entite_id,
             'actif' => $user->actif,
+            'photoUrl' => $user->photo_url,
+            'twoFactorEnabled' => $user->two_factor_confirmed_at !== null,
             'dateCreation' => $user->created_at?->format('c'),
             'dateModification' => $user->updated_at?->format('c'),
         ];

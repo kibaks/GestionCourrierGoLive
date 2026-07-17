@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import QRCode from 'qrcode';
 import { useAuth } from '../context/AuthContext';
 import { userService } from '../services/userService';
+import { laravelApiService } from '../services/laravelApiService';
 import { Role, Utilisateur } from '../types';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
@@ -19,8 +21,15 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 
 const Profil: React.FC = () => {
-  const { user } = useAuth();
+  const { user, updateCurrentUser, logout } = useAuth();
   const [editing, setEditing] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [status, setStatus] = useState('');
+  const [passwordData, setPasswordData] = useState({ current: '', password: '', confirmation: '' });
+  const [twoFactorUri, setTwoFactorUri] = useState('');
+  const [twoFactorQr, setTwoFactorQr] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     nom: user?.nom || '',
     email: user?.email || ''
@@ -34,10 +43,57 @@ const Profil: React.FC = () => {
     }
   }, [user]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Mettre à jour le profil
-    setEditing(false);
+    try {
+      const next = await laravelApiService.updateProfile(formData.nom);
+      updateCurrentUser(next);
+      setEditing(false);
+      setStatus('Profil mis à jour.');
+    } catch { setStatus('Impossible de mettre à jour le profil.'); }
+  };
+
+  const handlePhoto = async (file?: File) => {
+    if (!file) return;
+    try { updateCurrentUser(await laravelApiService.uploadProfilePhoto(file)); setStatus('Photo de profil mise à jour.'); }
+    catch { setStatus('La photo doit être une image de 2 Mo maximum.'); }
+  };
+
+  const changePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await laravelApiService.changeProfilePassword(passwordData.current, passwordData.password, passwordData.confirmation);
+      setStatus('Mot de passe modifié. Reconnectez-vous pour continuer.');
+      logout();
+    } catch { setStatus('Impossible de modifier le mot de passe. Vérifiez les champs saisis.'); }
+  };
+
+  const beginTwoFactor = async () => {
+    try {
+      const data = await laravelApiService.beginTwoFactor();
+      setTwoFactorUri(data.otpauthUri);
+      setTwoFactorQr(await QRCode.toDataURL(data.otpauthUri, { width: 220, margin: 1 }));
+      setRecoveryCodes([]);
+    } catch { setStatus('Impossible de démarrer la configuration du second facteur.'); }
+  };
+
+  const confirmTwoFactor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setRecoveryCodes(await laravelApiService.confirmTwoFactor(twoFactorCode));
+      setTwoFactorUri(''); setTwoFactorQr(''); setTwoFactorCode('');
+      if (user) updateCurrentUser({ ...user, twoFactorEnabled: true } as Utilisateur);
+    } catch { setStatus('Code de vérification invalide.'); }
+  };
+
+  const disableTwoFactor = async () => {
+    const currentPassword = window.prompt('Saisissez votre mot de passe actuel pour désactiver le second facteur.');
+    if (!currentPassword) return;
+    try {
+      await laravelApiService.disableTwoFactor(currentPassword);
+      if (user) updateCurrentUser({ ...user, twoFactorEnabled: false } as Utilisateur);
+      setRecoveryCodes([]); setStatus('Authentification à deux facteurs désactivée.');
+    } catch { setStatus('Mot de passe incorrect ou opération impossible.'); }
   };
 
   const getRoleColor = (role: Role) => {
@@ -110,10 +166,11 @@ const Profil: React.FC = () => {
                 </div>
               )}
               {editing && (
-                <button className="absolute bottom-2 right-2 w-10 h-10 bg-primary-500 text-white rounded-xl shadow-lg flex items-center justify-center hover:bg-primary-600 transition-colors">
+                <button type="button" onClick={() => photoInputRef.current?.click()} className="absolute bottom-2 right-2 w-10 h-10 bg-primary-500 text-white rounded-xl shadow-lg flex items-center justify-center hover:bg-primary-600 transition-colors">
                   <FontAwesomeIcon icon={faCamera} className="w-4 h-4" />
                 </button>
               )}
+              <input ref={photoInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => handlePhoto(e.target.files?.[0])} />
             </div>
           </div>
 
@@ -184,6 +241,29 @@ const Profil: React.FC = () => {
           )}
         </div>
       </div>
+
+      {status && <p className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-800">{status}</p>}
+
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <form onSubmit={changePassword} className="rounded-2xl border border-surface-100 bg-white p-6 shadow-card space-y-4">
+          <h2 className="text-lg font-bold text-surface-900">Mot de passe</h2>
+          <input type="password" required autoComplete="current-password" value={passwordData.current} onChange={e => setPasswordData({ ...passwordData, current: e.target.value })} placeholder="Mot de passe actuel" className="w-full rounded-xl border-2 border-surface-200 px-4 py-3" />
+          <input type="password" required autoComplete="new-password" value={passwordData.password} onChange={e => setPasswordData({ ...passwordData, password: e.target.value })} placeholder="Nouveau mot de passe" className="w-full rounded-xl border-2 border-surface-200 px-4 py-3" />
+          <input type="password" required autoComplete="new-password" value={passwordData.confirmation} onChange={e => setPasswordData({ ...passwordData, confirmation: e.target.value })} placeholder="Confirmer le nouveau mot de passe" className="w-full rounded-xl border-2 border-surface-200 px-4 py-3" />
+          <button className="rounded-xl bg-primary-600 px-4 py-3 font-semibold text-white">Modifier le mot de passe</button>
+        </form>
+        <section className="rounded-2xl border border-surface-100 bg-white p-6 shadow-card">
+          <h2 className="text-lg font-bold text-surface-900">Authentification à deux facteurs</h2>
+          <p className="mt-2 text-sm text-surface-500">Facultative, compatible Google Authenticator, Authy et Microsoft Authenticator.</p>
+          {user?.twoFactorEnabled ? <button type="button" onClick={disableTwoFactor} className="mt-4 rounded-xl border border-red-300 px-4 py-3 font-semibold text-red-700">Désactiver</button> : !twoFactorUri ? <button type="button" onClick={beginTwoFactor} className="mt-4 rounded-xl bg-primary-600 px-4 py-3 font-semibold text-white">Configurer</button> : <form onSubmit={confirmTwoFactor} className="mt-4 space-y-3">
+            {twoFactorQr && <img src={twoFactorQr} alt="QR code de configuration TOTP" className="mx-auto h-[220px] w-[220px]" />}
+            <p className="break-all text-xs text-surface-500">{twoFactorUri}</p>
+            <input required inputMode="numeric" maxLength={6} value={twoFactorCode} onChange={e => setTwoFactorCode(e.target.value)} placeholder="Code à 6 chiffres" className="w-full rounded-xl border-2 border-surface-200 px-4 py-3 text-center tracking-[0.3em]" />
+            <button className="rounded-xl bg-primary-600 px-4 py-3 font-semibold text-white">Activer</button>
+          </form>}
+          {recoveryCodes.length > 0 && <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900"><strong>Conservez ces codes dans un lieu sûr :</strong><div className="mt-2 grid grid-cols-2 gap-2 font-mono">{recoveryCodes.map(code => <span key={code}>{code}</span>)}</div></div>}
+        </section>
+      </section>
 
       {/* Info Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

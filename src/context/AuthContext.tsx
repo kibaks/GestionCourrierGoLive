@@ -4,12 +4,16 @@ import { adminService } from '../services/adminService';
 import { laravelApiService } from '../services/laravelApiService';
 import { formulaireCourrierService } from '../services/formulaireCourrierService';
 
+type LoginResult = { success: boolean; twoFactorRequired?: boolean; challenge?: string };
+
 interface AuthContextType {
   user: Utilisateur | null;
   authReady: boolean;
   locked: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
-  loginWithGoogle: (googleUser: any) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  completeTwoFactorLogin: (challenge: string, code: string) => Promise<boolean>;
+  loginWithGoogle: (credential: string) => Promise<boolean>;
+  updateCurrentUser: (user: Utilisateur) => void;
   logout: () => void;
   unlockWithPassword: (password: string) => Promise<boolean>;
   isAuthenticated: boolean;
@@ -236,30 +240,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setAuthReady(true);
           return;
         }
-        if (saved && parsedUser?.email) {
-          try {
-            const newToken = await laravelApiService.getTokenByEmail(parsedUser.email);
-            if (newToken) {
-              laravelApiService.setAuthToken(newToken);
-              const me = await laravelApiService.getMe();
-              if (me) {
-                setUser(me);
-                localStorage.setItem('user', JSON.stringify(me));
-                setLocked(false);
-                await formulaireCourrierService.getConfigAsync().catch(() => {});
-                setAuthReady(true);
-                return;
-              }
-            }
-          } catch (e) {
-            if (isNetworkError(e) && parsedUser) {
-              setUser(parsedUser);
-              setLocked(false);
-              setAuthReady(true);
-              return;
-            }
-          }
-        }
         setUser(null);
         localStorage.removeItem('user');
         setLocked(false);
@@ -272,124 +252,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     restoreSession().finally(() => clearTimeout(timeoutId));
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    if (laravelApiService.isConfigured()) {
-      await Promise.all([adminService.refreshUsersFromApi(), adminService.refreshRolesFromApi()]);
-      let token = await laravelApiService.login(email, password);
-      if (!token) {
-        const allUsers = adminService.getAllUsers();
-        const foundUser = allUsers.find(u => u.email === email && u.actif);
-        if (foundUser && password === 'password') {
-          token = await laravelApiService.getTokenByEmail(foundUser.email);
-        }
-      }
-      if (token) {
-        laravelApiService.setAuthToken(token);
-        const me = await laravelApiService.getMe();
-        if (me) {
-          setUser(me);
-          setLocked(false);
-          localStorage.setItem('user', JSON.stringify(me));
-          await Promise.all([adminService.refreshUsersFromApi(), adminService.refreshRolesFromApi()]);
-          await formulaireCourrierService.getConfigAsync().catch(() => {});
-          return true;
-        }
-      }
-      return false;
-    }
-    // Mode local (démo) : utilisateurs adminService + mot de passe "password"
-    const allUsers = adminService.getAllUsers();
-    const foundUser = allUsers.find(u => u.email === email && u.actif);
-    if (foundUser && password === 'password') {
-      setUser(foundUser);
-      setLocked(false);
-      localStorage.setItem('user', JSON.stringify(foundUser));
-      return true;
-    }
-    return false;
+  const establishSession = async (token: string): Promise<boolean> => {
+    laravelApiService.setAuthToken(token);
+    const me = await laravelApiService.getMe();
+    if (!me) { laravelApiService.clearAuthToken(); return false; }
+    setUser(me);
+    setLocked(false);
+    localStorage.setItem('user', JSON.stringify(me));
+    await Promise.all([adminService.refreshUsersFromApi(), adminService.refreshRolesFromApi()]);
+    await formulaireCourrierService.getConfigAsync().catch(() => {});
+    return true;
   };
+
+  const login = async (email: string, password: string): Promise<LoginResult> => {
+    if (!laravelApiService.isConfigured()) return { success: false };
+    const response = await laravelApiService.login(email, password);
+    if (response.twoFactorRequired && response.challenge) return { success: false, twoFactorRequired: true, challenge: response.challenge };
+    return { success: response.token ? await establishSession(response.token) : false };
+  };
+
+  const completeTwoFactorLogin = async (challenge: string, code: string): Promise<boolean> => {
+    const token = await laravelApiService.completeTwoFactorLogin(challenge, code);
+    return token ? establishSession(token) : false;
+  };;
 
   const unlockWithPassword = async (password: string): Promise<boolean> => {
     if (!user?.email) return false;
-    const ok = await login(user.email, password);
-    if (ok) setLocked(false);
-    return ok;
+    const result = await login(user.email, password);
+    if (result.success) setLocked(false);
+    return result.success;
   };
 
-  const loginWithGoogle = async (googleUser: any): Promise<boolean> => {
-    try {
-      console.log('🔄 Traitement de la connexion Google pour:', googleUser.email);
-      
-      if (!googleUser || !googleUser.email) {
-        console.error('❌ Données Google invalides:', googleUser);
-        throw new Error('Données Google invalides. Email manquant.');
-      }
-      
-      if (laravelApiService.isConfigured()) {
-        await Promise.all([adminService.refreshUsersFromApi(), adminService.refreshRolesFromApi()]);
-      }
-      const allUsers = adminService.getAllUsers();
-      let user = allUsers.find(u => u.email === googleUser.email && u.actif);
-      
-      if (!user) {
-        console.log('📝 Création d\'un nouvel utilisateur pour:', googleUser.email);
-        try {
-          user = await adminService.createUser({
-            nom: googleUser.name || `${googleUser.given_name || ''} ${googleUser.family_name || ''}`.trim() || googleUser.email,
-            email: googleUser.email,
-            role: Role.AGENT,
-            actif: true,
-            photoUrl: googleUser.picture
-          });
-          console.log('✅ Utilisateur créé avec succès:', user.id);
-        } catch (createError: any) {
-          console.error('❌ Erreur lors de la création de l\'utilisateur:', createError);
-          throw new Error(`Impossible de créer l'utilisateur: ${createError?.message || 'Erreur inconnue'}`);
-        }
-      } else {
-        console.log('✅ Utilisateur existant trouvé:', user.id);
-        if (googleUser.picture && !user.photoUrl) {
-          try {
-            const updatedUser = await adminService.updateUser(user.id, { photoUrl: googleUser.picture });
-            user = updatedUser || undefined;
-            console.log('✅ Photo de profil mise à jour');
-          } catch (updateError) {
-            console.warn('⚠️ Erreur lors de la mise à jour de la photo:', updateError);
-          }
-        }
-      }
-      
-      if (user) {
-        if (laravelApiService.isConfigured()) {
-          const token = await laravelApiService.getTokenByEmail(user.email);
-          if (!token) {
-            throw new Error(
-              "Pour utiliser l'API Laravel, configurez VITE_LARAVEL_SYNC_SECRET (front .env) et LARAVEL_SYNC_SECRET (laravel-api/.env) avec la même valeur."
-            );
-          }
-          laravelApiService.setAuthToken(token);
-          const me = await laravelApiService.getMe();
-          if (!me) {
-            throw new Error('Impossible de récupérer la session API Laravel.');
-          }
-          setUser({ ...me, photoUrl: user.photoUrl ?? me.photoUrl });
-          localStorage.setItem('user', JSON.stringify({ ...me, photoUrl: user.photoUrl ?? me.photoUrl }));
-          console.log('✅ Connexion Google réussie (session basée sur le token):', me.email);
-          return true;
-        }
-        setUser(user);
-        localStorage.setItem('user', JSON.stringify(user));
-        console.log('✅ Connexion Google réussie pour:', user.email);
-        return true;
-      }
-      
-      console.error('❌ Utilisateur non trouvé après traitement');
-      throw new Error('Impossible de créer ou récupérer l\'utilisateur');
-    } catch (error: any) {
-      console.error('❌ Erreur lors de la connexion Google:', error);
-      // Propager l'erreur avec un message clair
-      throw new Error(error?.message || 'Erreur lors de la connexion Google. Vérifiez la console pour plus de détails.');
-    }
+  const loginWithGoogle = async (_credential: string): Promise<boolean> => {
+    throw new Error('La connexion Google doit être validée par l’API Laravel avant activation.');
+  };
+
+  const updateCurrentUser = (nextUser: Utilisateur): void => {
+    setUser(nextUser);
+    localStorage.setItem('user', JSON.stringify(nextUser));
   };
 
   const logout = () => {
@@ -456,7 +356,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         authReady,
         locked,
         login,
+        completeTwoFactorLogin,
         loginWithGoogle,
+        updateCurrentUser,
         logout,
         unlockWithPassword,
         isAuthenticated: !!user,

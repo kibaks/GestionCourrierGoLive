@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\PermissionService;
+use App\Services\TotpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -27,30 +29,48 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'email' => 'required|email',
-            'password' => 'required',
+            'password' => 'required|string',
         ]);
 
-        $credentials = $request->only('email', 'password');
+        $user = User::where('email', $validated['email'])->first();
+        if (!$user || !Hash::check($validated['password'], $user->password)) {
+            return response()->json(['message' => 'Identifiants invalides'], 401);
+        }
+        if (!$user->actif) return response()->json(['message' => 'Compte désactivé'], 403);
 
-        try {
-            if (!$token = JWTAuth::attempt($credentials)) {
-                return response()->json(['message' => 'Identifiants invalides'], 401);
+        if ($user->two_factor_confirmed_at) {
+            $challenge = bin2hex(random_bytes(32));
+            Cache::put("two-factor-login:{$challenge}", $user->id, now()->addMinutes(5));
+            return response()->json(['twoFactorRequired' => true, 'challenge' => $challenge]);
+        }
+
+        return $this->authenticatedResponse($user);
+    }
+
+    public function completeTwoFactorLogin(Request $request, TotpService $totp): JsonResponse
+    {
+        $validated = $request->validate(['challenge' => 'required|string', 'code' => 'required|string|max:32']);
+        $userId = Cache::pull("two-factor-login:{$validated['challenge']}");
+        $user = $userId ? User::find($userId) : null;
+        if (!$user || !$user->actif) return response()->json(['message' => 'Validation expirée ou invalide.'], 401);
+
+        $valid = false;
+        try { $valid = $totp->verify(decrypt($user->two_factor_secret), $validated['code']); } catch (\Throwable) { $valid = false; }
+        if (!$valid) {
+            $hashes = [];
+            try { $hashes = json_decode(decrypt($user->two_factor_recovery_codes), true) ?: []; } catch (\Throwable) {}
+            foreach ($hashes as $index => $hash) {
+                if (Hash::check(strtoupper($validated['code']), $hash)) {
+                    unset($hashes[$index]);
+                    $user->two_factor_recovery_codes = encrypt(json_encode(array_values($hashes)));
+                    $user->save();
+                    $valid = true;
+                    break;
+                }
             }
-        } catch (JWTException $e) {
-            return response()->json(['message' => 'Impossible de créer le token'], 500);
         }
-
-        $user = Auth::user();
-        if ($user && !$user->actif) {
-            return response()->json(['message' => 'Compte désactivé'], 403);
-        }
-
-        return response()->json([
-            'token' => $token,
-            'token_type' => 'bearer',
-            'expires_in' => config('jwt.ttl') ? config('jwt.ttl') * 60 : 3600,
-            'user' => $this->userToArray($user),
-        ]);
+        if (!$valid) return response()->json(['message' => 'Code de sécurité invalide.'], 422);
+        return $this->authenticatedResponse($user);
     }
 
     /**
@@ -149,44 +169,9 @@ class AuthController extends Controller
         return response()->json(['message' => 'Déconnexion réussie']);
     }
 
-    /**
-     * Obtenir un JWT à partir de l'email (front connecté via Firebase/Firestore).
-     * POST /api/auth/token-by-email
-     * Body: { "email": "...", "sync_secret": "..." }
-     * Le sync_secret doit correspondre à LARAVEL_SYNC_SECRET dans .env (front : VITE_LARAVEL_SYNC_SECRET).
-     * Si l'utilisateur n'existe pas en base, il est créé avec le rôle AGENT.
-     */
-    public function tokenByEmail(Request $request): JsonResponse
+    private function authenticatedResponse(User $user): JsonResponse
     {
-        $validated = $request->validate([
-            'email' => 'required|email',
-            'sync_secret' => 'required|string',
-        ]);
-
-        $secret = config('services.laravel_sync_secret') ?? env('LARAVEL_SYNC_SECRET');
-        if (empty($secret) || !hash_equals($secret, $validated['sync_secret'])) {
-            return response()->json(['message' => 'Secret invalide'], 401);
-        }
-
-        $user = User::where('email', $validated['email'])->first();
-        if (!$user) {
-            $user = User::create([
-                'name' => explode('@', $validated['email'])[0],
-                'email' => $validated['email'],
-                'password' => Hash::make(uniqid('sync_', true)),
-                'role' => 'AGENT',
-                'direction' => null,
-                'service' => null,
-                'actif' => true,
-            ]);
-        }
-
-        if (!$user->actif) {
-            return response()->json(['message' => 'Compte désactivé'], 403);
-        }
-
         $token = JWTAuth::fromUser($user);
-
         return response()->json([
             'token' => $token,
             'token_type' => 'bearer',
@@ -210,6 +195,8 @@ class AuthController extends Controller
             'service' => $user->service,
             'entiteId' => $user->entite_id,
             'actif' => $user->actif,
+            'photoUrl' => $user->photo_url,
+            'twoFactorEnabled' => $user->two_factor_confirmed_at !== null,
             'permissions' => $permissions,
         ];
     }

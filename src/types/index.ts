@@ -89,6 +89,7 @@ export interface Utilisateur {
   entiteId?: string; // ID de l'entité organisationnelle (sous-service, division, bureau, cellule, etc.)
   actif: boolean;
   photoUrl?: string;
+  twoFactorEnabled?: boolean;
   dateCreation: Date;
   dateModification: Date;
   creePar?: string;

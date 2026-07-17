@@ -10,6 +10,8 @@ import { NetworkStatusProvider } from './context/NetworkStatusContext'
 import { SyncStatusProvider } from './context/SyncStatusContext'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import ListeCourriers from './pages/ListeCourriers'
 import DetailCourrier from './pages/DetailCourrier'
@@ -99,6 +101,8 @@ function AppContent() {
         <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/mot-de-passe-oublie" element={<ForgotPassword />} />
+          <Route path="/reinitialiser-mot-de-passe" element={<ResetPassword />} />
           <Route
             path="/"
             element={

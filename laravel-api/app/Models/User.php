@@ -21,7 +21,11 @@ class User extends Authenticatable implements JWTSubject
     protected $fillable = [
         'name',
         'email',
+        'photo_url',
         'password',
+        'two_factor_secret',
+        'two_factor_confirmed_at',
+        'two_factor_recovery_codes',
         'role',
         'direction',
         'service',
@@ -32,12 +36,15 @@ class User extends Authenticatable implements JWTSubject
     protected $hidden = [
         'password',
         'remember_token',
+        'two_factor_secret',
+        'two_factor_recovery_codes',
     ];
 
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'actif' => 'boolean',
+        'two_factor_confirmed_at' => 'datetime',
     ];
 
     public function getJWTIdentifier(): mixed

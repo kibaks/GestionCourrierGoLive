@@ -1049,6 +1049,8 @@ class LaravelApiService {
       service: u.service != null ? String(u.service) : undefined,
       entiteId: entiteId != null ? String(entiteId) : undefined,
       actif: Boolean(u.actif),
+      photoUrl: u.photoUrl != null ? String(u.photoUrl) : (u.photo_url != null ? String(u.photo_url) : undefined),
+      twoFactorEnabled: Boolean(u.twoFactorEnabled ?? u.two_factor_confirmed_at),
       permissions: Array.isArray(u.permissions) ? u.permissions as Permission[] : [],
       dateCreation: new Date(),
       dateModification: new Date(),
@@ -1059,38 +1061,79 @@ class LaravelApiService {
    * Connexion Laravel classique : email + mot de passe → JWT.
    * POST /api/auth/login
    */
-  async login(email: string, password: string): Promise<string | null> {
-    if (!this.baseUrl) return null;
-    const url = `${this.baseUrl}/api/auth/login`;
-    const res = await fetch(url, {
+  async login(email: string, password: string): Promise<{ token?: string; twoFactorRequired?: boolean; challenge?: string }> {
+    if (!this.baseUrl) return {};
+    const res = await fetch(`${this.baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ email, password }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return {};
     const data = await res.json();
-    const token = data?.token;
-    return typeof token === 'string' ? token : null;
+    return {
+      token: typeof data?.token === 'string' ? data.token : undefined,
+      twoFactorRequired: data?.twoFactorRequired === true,
+      challenge: typeof data?.challenge === 'string' ? data.challenge : undefined,
+    };
   }
 
-  /**
-   * Obtenir un JWT Laravel à partir de l'email (après connexion Firebase/Firestore).
-   * Utilise POST /api/auth/token-by-email avec le secret partagé (VITE_LARAVEL_SYNC_SECRET).
-   */
-  async getTokenByEmail(email: string): Promise<string | null> {
+  async completeTwoFactorLogin(challenge: string, code: string): Promise<string | null> {
     if (!this.baseUrl) return null;
-    const syncSecret = import.meta.env.VITE_LARAVEL_SYNC_SECRET;
-    if (!syncSecret || String(syncSecret).trim() === '') return null;
-    const url = `${this.baseUrl}/api/auth/token-by-email`;
-    const res = await fetch(url, {
+    const res = await fetch(`${this.baseUrl}/api/auth/two-factor`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ email, sync_secret: syncSecret }),
+      body: JSON.stringify({ challenge, code }),
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const token = data?.token;
-    return typeof token === 'string' ? token : null;
+    return typeof data?.token === 'string' ? data.token : null;
+  }
+
+  async requestPasswordReset(email: string): Promise<void> {
+    if (!this.baseUrl) throw new Error('API Laravel non configurée');
+    await fetch(`${this.baseUrl}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ email }) });
+  }
+
+  async resetPassword(email: string, token: string, password: string, passwordConfirmation: string): Promise<void> {
+    if (!this.baseUrl) throw new Error('API Laravel non configurée');
+    const res = await fetch(`${this.baseUrl}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ email, token, password, password_confirmation: passwordConfirmation }) });
+    if (!res.ok) throw new Error(await res.text());
+  }
+
+  async updateProfile(nom: string): Promise<Utilisateur> {
+    const res = await fetch(`${this.baseUrl}/api/profile`, { method: 'PUT', headers: buildHeaders(), body: JSON.stringify({ name: nom }) });
+    if (!res.ok) throw new Error(await res.text());
+    return parseUtilisateurFromApi((await res.json()).data);
+  }
+
+  async uploadProfilePhoto(photo: File): Promise<Utilisateur> {
+    const form = new FormData(); form.append('photo', photo);
+    const token = getAuthToken();
+    const res = await fetch(`${this.baseUrl}/api/profile/photo`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}`, Accept: 'application/json' } : { Accept: 'application/json' }, body: form });
+    if (!res.ok) throw new Error(await res.text());
+    return parseUtilisateurFromApi((await res.json()).data);
+  }
+
+  async changeProfilePassword(currentPassword: string, password: string, passwordConfirmation: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/profile/password`, { method: 'PUT', headers: buildHeaders(), body: JSON.stringify({ current_password: currentPassword, password, password_confirmation: passwordConfirmation }) });
+    if (!res.ok) throw new Error(await res.text());
+  }
+
+  async beginTwoFactor(): Promise<{ secret: string; otpauthUri: string }> {
+    const res = await fetch(`${this.baseUrl}/api/profile/two-factor`, { method: 'POST', headers: buildHeaders() });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async confirmTwoFactor(code: string): Promise<string[]> {
+    const res = await fetch(`${this.baseUrl}/api/profile/two-factor/confirm`, { method: 'POST', headers: buildHeaders(), body: JSON.stringify({ code }) });
+    if (!res.ok) throw new Error(await res.text());
+    return (await res.json()).recoveryCodes ?? [];
+  }
+
+  async disableTwoFactor(currentPassword: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/profile/two-factor`, { method: 'DELETE', headers: buildHeaders(), body: JSON.stringify({ current_password: currentPassword }) });
+    if (!res.ok) throw new Error(await res.text());
   }
 
   /** Définir le token d'authentification (après login Laravel/Sanctum) */
@@ -2082,6 +2125,8 @@ function parseUtilisateurFromApi(raw: Record<string, unknown>): Utilisateur {
     service: u.service != null ? String(u.service) : undefined,
     entiteId: entiteId != null ? String(entiteId) : undefined,
     actif: Boolean(u.actif),
+    photoUrl: u.photoUrl != null ? String(u.photoUrl) : (u.photo_url != null ? String(u.photo_url) : undefined),
+    twoFactorEnabled: Boolean(u.twoFactorEnabled ?? u.two_factor_confirmed_at),
     dateCreation: new Date(),
     dateModification: new Date(),
   };

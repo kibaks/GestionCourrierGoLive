@@ -31,7 +31,9 @@ const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { login, loginWithGoogle } = useAuth();
+  const [twoFactorChallenge, setTwoFactorChallenge] = useState<string | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const { login, completeTwoFactorLogin, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -122,13 +124,7 @@ const Login: React.FC = () => {
         throw new Error('Email manquant dans la réponse Google');
       }
       
-      const success = await loginWithGoogle({
-        email: payload.email,
-        name: payload.name || `${payload.given_name || ''} ${payload.family_name || ''}`.trim(),
-        given_name: payload.given_name || '',
-        family_name: payload.family_name || '',
-        picture: payload.picture || ''
-      });
+      const success = await loginWithGoogle(response.credential);
 
       if (success) {
         console.log('✅ Connexion Google réussie');
@@ -162,14 +158,33 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      const success = await login(email, password);
-      if (success) {
+      const result = await login(email, password);
+      if (result.success) {
         navigate('/dashboard');
+      } else if (result.twoFactorRequired && result.challenge) {
+        setTwoFactorChallenge(result.challenge);
+        setTwoFactorCode('');
       } else {
         setError('Email ou mot de passe incorrect');
       }
     } catch (err) {
       setError('Une erreur est survenue');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTwoFactorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!twoFactorChallenge) return;
+    setError('');
+    setLoading(true);
+    try {
+      const success = await completeTwoFactorLogin(twoFactorChallenge, twoFactorCode.replace(/\s/g, ''));
+      if (success) navigate('/dashboard');
+      else setError('Code de sécurité invalide ou expiré.');
+    } catch {
+      setError('Impossible de vérifier le code de sécurité.');
     } finally {
       setLoading(false);
     }
@@ -312,6 +327,17 @@ const Login: React.FC = () => {
             </div>
           )}
 
+          {twoFactorChallenge ? (
+            <form onSubmit={handleTwoFactorSubmit} className="space-y-5">
+              <div>
+                <label htmlFor="two-factor-code" className="block text-sm font-semibold text-surface-700 mb-2">Code de sécurité</label>
+                <input id="two-factor-code" inputMode="numeric" autoComplete="one-time-code" maxLength={32} value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} required autoFocus className="w-full px-4 py-3.5 bg-white border-2 border-surface-200 rounded-xl focus:ring-0 focus:border-primary-500 text-center tracking-[0.35em] text-lg" placeholder="000000" />
+                <p className="mt-2 text-sm text-surface-500">Saisissez le code de votre application ou un code de récupération.</p>
+              </div>
+              <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-primary-500 to-primary-600 text-white py-4 rounded-xl font-semibold disabled:opacity-70">{loading ? 'Vérification…' : 'Vérifier et se connecter'}</button>
+              <button type="button" onClick={() => setTwoFactorChallenge(null)} className="w-full text-sm text-primary-600 font-medium">Retour à la connexion</button>
+            </form>
+          ) : <>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label htmlFor="email" className="block text-sm font-semibold text-surface-700 mb-2">
@@ -404,6 +430,8 @@ const Login: React.FC = () => {
             </svg>
             <span>Google</span>
           </button>
+          <button type="button" onClick={() => navigate('/mot-de-passe-oublie')} className="mt-5 w-full text-sm text-primary-600 hover:text-primary-700 font-medium">Mot de passe oublié ?</button>
+          </>}
         </div>
       </div>
     </div>
