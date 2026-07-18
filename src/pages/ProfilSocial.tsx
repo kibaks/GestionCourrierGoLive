@@ -5,6 +5,7 @@ import { faBell, faCamera, faCheckCircle, faEnvelope, faGlobe, faIdBadge, faKey,
 import { useAuth } from '../context/AuthContext';
 import { laravelApiService } from '../services/laravelApiService';
 import type { Utilisateur } from '../types';
+import './ProfilSocial.css';
 
 type Tab = 'about' | 'contact' | 'privacy' | 'notifications' | 'security';
 type Preferences = NonNullable<Utilisateur['notificationPreferences']>;
@@ -51,7 +52,7 @@ const ProfilSocial: React.FC = () => {
   if (!user) return null;
   const field = (label: string, key: keyof Utilisateur, type = 'text') => <label className="block text-sm font-medium text-slate-700"><span className="mb-1 block">{label}</span><input type={type} value={String(form[key] ?? '')} onChange={e => setForm({ ...form, [key]: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none transition focus:border-blue-500 focus:bg-white" /></label>;
 
-  return <div className="mx-auto max-w-6xl space-y-6 pb-10">
+  return <div className="profile-social mx-auto max-w-6xl space-y-6 pb-10">
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
       <div className="relative h-48 bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-500 md:h-60" style={user.coverUrl ? { backgroundImage: `url(${user.coverUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/50 to-transparent" />
