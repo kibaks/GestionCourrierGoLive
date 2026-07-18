@@ -1125,11 +1125,6 @@ class LaravelApiService {
     if (!res.ok) throw new Error(await res.text());
   }
 
-  async confirmEmailChange(token: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/api/profile/confirm-email`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ token }) });
-    if (!res.ok) throw new Error(await res.text());
-  }
-
   async requestSmsVerification(phone: string): Promise<void> {
     const res = await fetch(`${this.baseUrl}/api/profile/sms-verification`, { method: 'POST', headers: buildHeaders(), body: JSON.stringify({ phone }) });
     if (!res.ok) throw new Error(await res.text());
@@ -1139,6 +1134,11 @@ class LaravelApiService {
     const res = await fetch(`${this.baseUrl}/api/profile/sms-verification/confirm`, { method: 'POST', headers: buildHeaders(), body: JSON.stringify({ code }) });
     if (!res.ok) throw new Error(await res.text());
     return parseUtilisateurFromApi((await res.json()).data);
+  }
+
+  async confirmEmailChange(token: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/profile/confirm-email`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ token }) });
+    if (!res.ok) throw new Error(await res.text());
   }
 
   async changeProfilePassword(currentPassword: string, password: string, passwordConfirmation: string): Promise<void> {
