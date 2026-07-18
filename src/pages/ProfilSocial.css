@@ -134,6 +134,42 @@
   background: #fafbff;
 }
 
+.profile-social .profile-switch {
+  display: inline-flex;
+  width: 2.8rem;
+  height: 1.55rem;
+  align-items: center;
+  padding: .18rem;
+  border: 0;
+  border-radius: 9999px;
+  background: #cbd5e1;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, .18);
+}
+
+.profile-social .profile-switch span {
+  display: block;
+  width: 1.18rem;
+  height: 1.18rem;
+  border-radius: 9999px;
+  background: white;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, .25);
+  transition: transform .22s cubic-bezier(.4, 0, .2, 1);
+}
+
+.profile-social .profile-switch.profile-switch-on {
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  box-shadow: 0 5px 12px -6px rgba(79, 70, 229, .95);
+}
+
+.profile-social .profile-switch.profile-switch-on span {
+  transform: translateX(1.25rem);
+}
+
+.profile-social .profile-switch:focus-visible {
+  outline: 3px solid rgba(99, 102, 241, .35);
+  outline-offset: 3px;
+}
+
 @media (max-width: 640px) {
   .profile-social::before,
   .profile-social::after {
