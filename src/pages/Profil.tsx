@@ -46,7 +46,7 @@ const Profil: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const next = await laravelApiService.updateProfile(formData.nom);
+      const next = await laravelApiService.updateProfile({ nom: formData.nom });
       updateCurrentUser(next);
       setEditing(false);
       setStatus('Profil mis à jour.');

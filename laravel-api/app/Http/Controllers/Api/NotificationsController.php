@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
+use App\Services\NotificationDeliveryService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -41,7 +42,7 @@ class NotificationsController extends Controller
     /**
      * Créer une nouvelle notification
      */
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, NotificationDeliveryService $delivery): JsonResponse
     {
         $validated = $request->validate([
             'userId' => 'required|string',
@@ -70,6 +71,7 @@ class NotificationsController extends Controller
             'updated_at' => now()
         ]);
 
+        $delivery->deliver($notification);
         return response()->json($notification, 201);
     }
 

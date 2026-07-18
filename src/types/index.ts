@@ -89,6 +89,21 @@ export interface Utilisateur {
   entiteId?: string; // ID de l'entité organisationnelle (sous-service, division, bureau, cellule, etc.)
   actif: boolean;
   photoUrl?: string;
+  coverUrl?: string;
+  firstName?: string;
+  lastName?: string;
+  jobTitle?: string;
+  professionalPhone?: string;
+  personalPhone?: string;
+  bio?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  profileVisibility?: Record<string, string>;
+  notificationPreferences?: Record<string, { app?: boolean; email?: boolean; sms?: boolean }>;
+  smsPhone?: string;
+  smsVerified?: boolean;
+  emailVerified?: boolean;
   twoFactorEnabled?: boolean;
   dateCreation: Date;
   dateModification: Date;

@@ -12,6 +12,7 @@ import Layout from './components/Layout'
 import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
+import ConfirmEmailChange from './pages/ConfirmEmailChange'
 import Dashboard from './pages/Dashboard'
 import ListeCourriers from './pages/ListeCourriers'
 import DetailCourrier from './pages/DetailCourrier'
@@ -21,7 +22,7 @@ import RegistreCourriers from './pages/RegistreCourriers'
 import Workflow from './pages/Workflow'
 import Planning from './pages/Planning'
 import Notifications from './pages/Notifications'
-import Profil from './pages/Profil'
+import Profil from './pages/ProfilSocial'
 import Parametres from './pages/Parametres'
 import Archives from './pages/Archives'
 import ImpressionCourriers from './pages/ImpressionCourriers'
@@ -103,6 +104,7 @@ function AppContent() {
           <Route path="/login" element={<Login />} />
           <Route path="/mot-de-passe-oublie" element={<ForgotPassword />} />
           <Route path="/reinitialiser-mot-de-passe" element={<ResetPassword />} />
+          <Route path="/confirmer-email" element={<ConfirmEmailChange />} />
           <Route
             path="/"
             element={

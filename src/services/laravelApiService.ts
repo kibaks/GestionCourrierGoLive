@@ -1038,23 +1038,8 @@ class LaravelApiService {
     const data = await res.json();
     const raw = data?.data;
     if (!raw || typeof raw !== 'object') return null;
-    const u = raw as Record<string, unknown>;
-    const entiteId = u.entiteId ?? u.entite_id;
-    return {
-      id: String(u.id ?? ''),
-      nom: String(u.nom ?? u.name ?? ''),
-      email: String(u.email ?? ''),
-      role: (u.role as Utilisateur['role']) ?? 'AGENT',
-      direction: u.direction != null ? String(u.direction) : undefined,
-      service: u.service != null ? String(u.service) : undefined,
-      entiteId: entiteId != null ? String(entiteId) : undefined,
-      actif: Boolean(u.actif),
-      photoUrl: u.photoUrl != null ? String(u.photoUrl) : (u.photo_url != null ? String(u.photo_url) : undefined),
-      twoFactorEnabled: Boolean(u.twoFactorEnabled ?? u.two_factor_confirmed_at),
-      permissions: Array.isArray(u.permissions) ? u.permissions as Permission[] : [],
-      dateCreation: new Date(),
-      dateModification: new Date(),
-    };
+    const user = parseUtilisateurFromApi(raw as Record<string, unknown>);
+    return { ...user, permissions: Array.isArray((raw as Record<string, unknown>).permissions) ? (raw as Record<string, unknown>).permissions as Permission[] : [] };
   }
 
   /**
@@ -1100,8 +1085,21 @@ class LaravelApiService {
     if (!res.ok) throw new Error(await res.text());
   }
 
-  async updateProfile(nom: string): Promise<Utilisateur> {
-    const res = await fetch(`${this.baseUrl}/api/profile`, { method: 'PUT', headers: buildHeaders(), body: JSON.stringify({ name: nom }) });
+  async updateProfile(updates: Partial<Utilisateur>): Promise<Utilisateur> {
+    const res = await fetch(`${this.baseUrl}/api/profile`, { method: 'PUT', headers: buildHeaders(), body: JSON.stringify({
+      name: updates.nom,
+      firstName: updates.firstName,
+      lastName: updates.lastName,
+      jobTitle: updates.jobTitle,
+      professionalPhone: updates.professionalPhone,
+      personalPhone: updates.personalPhone,
+      bio: updates.bio,
+      address: updates.address,
+      city: updates.city,
+      country: updates.country,
+      profileVisibility: updates.profileVisibility,
+      notificationPreferences: updates.notificationPreferences,
+    }) });
     if (!res.ok) throw new Error(await res.text());
     return parseUtilisateurFromApi((await res.json()).data);
   }
@@ -1110,6 +1108,35 @@ class LaravelApiService {
     const form = new FormData(); form.append('photo', photo);
     const token = getAuthToken();
     const res = await fetch(`${this.baseUrl}/api/profile/photo`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}`, Accept: 'application/json' } : { Accept: 'application/json' }, body: form });
+    if (!res.ok) throw new Error(await res.text());
+    return parseUtilisateurFromApi((await res.json()).data);
+  }
+
+  async uploadProfileCover(cover: File): Promise<Utilisateur> {
+    const form = new FormData(); form.append('cover', cover);
+    const token = getAuthToken();
+    const res = await fetch(`${this.baseUrl}/api/profile/cover`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}`, Accept: 'application/json' } : { Accept: 'application/json' }, body: form });
+    if (!res.ok) throw new Error(await res.text());
+    return parseUtilisateurFromApi((await res.json()).data);
+  }
+
+  async requestEmailChange(email: string, currentPassword: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/profile/email-change`, { method: 'POST', headers: buildHeaders(), body: JSON.stringify({ email, current_password: currentPassword }) });
+    if (!res.ok) throw new Error(await res.text());
+  }
+
+  async confirmEmailChange(token: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/profile/confirm-email`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ token }) });
+    if (!res.ok) throw new Error(await res.text());
+  }
+
+  async requestSmsVerification(phone: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/profile/sms-verification`, { method: 'POST', headers: buildHeaders(), body: JSON.stringify({ phone }) });
+    if (!res.ok) throw new Error(await res.text());
+  }
+
+  async confirmSmsVerification(code: string): Promise<Utilisateur> {
+    const res = await fetch(`${this.baseUrl}/api/profile/sms-verification/confirm`, { method: 'POST', headers: buildHeaders(), body: JSON.stringify({ code }) });
     if (!res.ok) throw new Error(await res.text());
     return parseUtilisateurFromApi((await res.json()).data);
   }
@@ -2126,6 +2153,21 @@ function parseUtilisateurFromApi(raw: Record<string, unknown>): Utilisateur {
     entiteId: entiteId != null ? String(entiteId) : undefined,
     actif: Boolean(u.actif),
     photoUrl: u.photoUrl != null ? String(u.photoUrl) : (u.photo_url != null ? String(u.photo_url) : undefined),
+    coverUrl: u.coverUrl != null ? String(u.coverUrl) : (u.cover_url != null ? String(u.cover_url) : undefined),
+    firstName: u.firstName != null ? String(u.firstName) : (u.first_name != null ? String(u.first_name) : undefined),
+    lastName: u.lastName != null ? String(u.lastName) : (u.last_name != null ? String(u.last_name) : undefined),
+    jobTitle: u.jobTitle != null ? String(u.jobTitle) : (u.job_title != null ? String(u.job_title) : undefined),
+    professionalPhone: u.professionalPhone != null ? String(u.professionalPhone) : undefined,
+    personalPhone: u.personalPhone != null ? String(u.personalPhone) : undefined,
+    bio: u.bio != null ? String(u.bio) : undefined,
+    address: u.address != null ? String(u.address) : undefined,
+    city: u.city != null ? String(u.city) : undefined,
+    country: u.country != null ? String(u.country) : undefined,
+    profileVisibility: (u.profileVisibility ?? u.profile_visibility ?? {}) as Utilisateur['profileVisibility'],
+    notificationPreferences: (u.notificationPreferences ?? u.notification_preferences ?? {}) as Utilisateur['notificationPreferences'],
+    smsPhone: u.smsPhone != null ? String(u.smsPhone) : (u.sms_phone != null ? String(u.sms_phone) : undefined),
+    smsVerified: Boolean(u.smsVerified ?? u.sms_verified_at),
+    emailVerified: Boolean(u.emailVerified ?? u.email_verified_at),
     twoFactorEnabled: Boolean(u.twoFactorEnabled ?? u.two_factor_confirmed_at),
     dateCreation: new Date(),
     dateModification: new Date(),

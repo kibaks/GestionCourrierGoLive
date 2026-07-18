@@ -20,6 +20,8 @@ class User extends Authenticatable implements JWTSubject
 
     protected $fillable = [
         'name',
+        'first_name',
+        'last_name',
         'email',
         'photo_url',
         'password',
@@ -29,6 +31,18 @@ class User extends Authenticatable implements JWTSubject
         'role',
         'direction',
         'service',
+        'job_title',
+        'professional_phone',
+        'personal_phone',
+        'bio',
+        'address',
+        'city',
+        'country',
+        'cover_url',
+        'profile_visibility',
+        'notification_preferences',
+        'sms_phone',
+        'sms_verified_at',
         'entite_id',
         'actif',
     ];
@@ -45,6 +59,9 @@ class User extends Authenticatable implements JWTSubject
         'password' => 'hashed',
         'actif' => 'boolean',
         'two_factor_confirmed_at' => 'datetime',
+        'profile_visibility' => 'array',
+        'notification_preferences' => 'array',
+        'sms_verified_at' => 'datetime',
     ];
 
     public function getJWTIdentifier(): mixed

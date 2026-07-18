@@ -53,6 +53,7 @@ Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttl
 Route::post('auth/two-factor', [AuthController::class, 'completeTwoFactorLogin'])->middleware('throttle:5,1');
 Route::post('auth/forgot-password', [PasswordResetController::class, 'requestReset'])->middleware('throttle:3,1');
 Route::post('auth/reset-password', [PasswordResetController::class, 'reset'])->middleware('throttle:5,1');
+Route::post('profile/confirm-email', [ProfileController::class, 'confirmEmailChange'])->middleware('throttle:5,1');
 Route::post('auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
 
 // ----- Toutes les routes suivantes protégées JWT -----
@@ -64,6 +65,10 @@ Route::middleware('auth:api')->group(function () {
     Route::get('profile', [ProfileController::class, 'show']);
     Route::put('profile', [ProfileController::class, 'update']);
     Route::post('profile/photo', [ProfileController::class, 'photo'])->middleware('throttle:10,1');
+    Route::post('profile/cover', [ProfileController::class, 'cover'])->middleware('throttle:10,1');
+    Route::post('profile/email-change', [ProfileController::class, 'requestEmailChange'])->middleware('throttle:3,1');
+    Route::post('profile/sms-verification', [ProfileController::class, 'requestSmsVerification'])->middleware('throttle:3,10');
+    Route::post('profile/sms-verification/confirm', [ProfileController::class, 'confirmSmsVerification'])->middleware('throttle:5,10');
     Route::put('profile/password', [ProfileController::class, 'changePassword'])->middleware('throttle:5,1');
     Route::post('profile/two-factor', [ProfileController::class, 'beginTwoFactor'])->middleware('throttle:5,1');
     Route::post('profile/two-factor/confirm', [ProfileController::class, 'confirmTwoFactor'])->middleware('throttle:5,1');
