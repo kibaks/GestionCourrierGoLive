@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
+import dayjs from 'dayjs';
+import 'dayjs/locale/fr';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -52,7 +54,7 @@ const makeRow = (defaults: RowDefaults = {}): RowData => ({
   id: uid(),
   sens: defaults.sens ?? SensCourrier.ENTRANT,
   type: defaults.type ?? TypeCourrier.EXTERNE,
-  dateReception: new Date().toISOString().split('T')[0],
+  dateReception: dayjs().format('YYYY-MM-DDTHH:mm'),
   expediteur: defaults.expediteur ?? '',
   destinataire: defaults.destinataire ?? '',
   objet: '',
@@ -885,7 +887,7 @@ const EnregistrerCourrierListe: React.FC = () => {
           delete (extraFieldsCopy as any)['NUMERO'];
         }
         const data: Omit<Courrier, 'id' | 'numero' | 'dateEnregistrement' | 'createdAt' | 'updatedAt'> & { numero?: string } = {
-          type: r.type, sens: r.sens, dateReception: new Date(r.dateReception),
+          type: r.type, sens: r.sens, dateReception: r.dateReception,
           expediteur: r.expediteur.trim(), destinataire: r.destinataire.trim(),
           objet: r.objet.trim(), direction: r.direction || undefined,
           service: r.service || undefined, priorite: resolvedPriorite,

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
+import dayjs from 'dayjs';
+import 'dayjs/locale/fr';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import ReactDOM from 'react-dom';
@@ -341,7 +343,7 @@ const EnregistrerCourrier: React.FC = () => {
     return {
       sens: initSens,
       type: initType,
-      dateReception: new Date().toISOString().split('T')[0],
+      dateReception: dayjs().format('YYYY-MM-DDTHH:mm'),
       expediteur: defaults.expediteur,
       destinataire: defaults.destinataire,
       objet: '',
@@ -453,17 +455,17 @@ const EnregistrerCourrier: React.FC = () => {
         console.log('✅ Courrier trouvé:', courrier);
 
         // Pré-remplir le formulaire avec les données du courrier
-        // Convertir la date en string si c'est un objet Date
+        // Conserver l'heure si elle est présente
         const rawDate: unknown = courrier.dateReception;
         let dateReceptionStr: string;
         if (rawDate instanceof Date) {
-          dateReceptionStr = rawDate.toISOString().split('T')[0];
+          dateReceptionStr = dayjs(rawDate).format('YYYY-MM-DDTHH:mm');
         } else if (typeof rawDate === 'string' && rawDate.includes('T')) {
-          dateReceptionStr = rawDate.split('T')[0];
+          dateReceptionStr = rawDate.slice(0, 16);
         } else if (typeof rawDate === 'string') {
-          dateReceptionStr = rawDate;
+          dateReceptionStr = `${rawDate}T00:00`;
         } else {
-          dateReceptionStr = new Date().toISOString().split('T')[0];
+          dateReceptionStr = dayjs().format('YYYY-MM-DDTHH:mm');
         }
         
         // Charger extraFields d'abord
@@ -724,12 +726,12 @@ const EnregistrerCourrier: React.FC = () => {
     setAllFields(sections);
   }, [formConfig, formData.sens, formData.type]);
 
-  // S'assurer que la date de réception est toujours initialisée
+  // S'assurer que la date de réception est toujours initialisée avec l'heure actuelle
   useEffect(() => {
     if (!formData.dateReception) {
       setFormData(prev => ({
         ...prev,
-        dateReception: new Date().toISOString().split('T')[0]
+        dateReception: dayjs().format('YYYY-MM-DDTHH:mm')
       }));
     }
   }, []);
@@ -826,7 +828,7 @@ const EnregistrerCourrier: React.FC = () => {
       }
       const updated = { ...prev, [fieldId]: cleanValue };
       if (fieldId === 'dateReception' && (!value || value === '')) {
-        updated.dateReception = new Date().toISOString().split('T')[0];
+        updated.dateReception = dayjs().format('YYYY-MM-DDTHH:mm');
       }
       return updated;
     });

@@ -4,6 +4,25 @@
  */
 
 import type { Courrier, CategorieFichier, Utilisateur, Assignation, Rappel, Annotation, WorkflowEtape, EntiteOrganisationnelle, EntiteTypeDefinition, RoleDefinition, Permission, Archive } from '../types';
+import dayjs from 'dayjs';
+
+function toLocalISOString(value: unknown): string | null {
+  if (!value && value !== 0) return null;
+  if (value instanceof Date) return dayjs(value).format();
+  if (typeof value === 'string') {
+    if (!value.trim()) return null;
+    // Si déjà au format ISO complet (avec offset), le conserver
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
+      if (value.includes('+') || value.endsWith('Z')) return value;
+      return dayjs(value).format();
+    }
+    // Date seule -> minuit local
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return dayjs(`${value}T00:00:00`).format();
+    // Date/heure locale sans secondes ni offset
+    return dayjs(value).format();
+  }
+  return null;
+}
 
 function parseCategorieFichierFromApi(raw: Record<string, unknown>): CategorieFichier {
   const dateFields = ['dateCreation', 'dateModification'];
@@ -213,7 +232,10 @@ function prepareCourrierForApi(c: Partial<Courrier>): Record<string, unknown> {
   const dateKeys = ['dateReception', 'dateEnregistrement', 'createdAt', 'updatedAt'];
   for (const key of dateKeys) {
     const v = out[key];
-    if (v instanceof Date) out[key] = (v as Date).toISOString();
+    if (v !== undefined && v !== null && (v instanceof Date || typeof v === 'string')) {
+      const formatted = toLocalISOString(v);
+      if (formatted) out[key] = formatted;
+    }
   }
   // Ne pas envoyer numero si vide : l'API Laravel génère automatiquement le numéro (INT-AAAA-NNNN / EXT-AAAA-NNNN)
   const numeroVal = out.numero;
