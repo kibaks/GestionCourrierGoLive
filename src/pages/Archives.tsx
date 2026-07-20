@@ -9,6 +9,7 @@ import { laravelApiService } from '../services/laravelApiService';
 import { Archive, Courrier, StatutCourrier, BoiteArchive, LocalArchivage, Armoire, Etagere, SensCourrier, TypeCourrier, Role } from '../types';
 import Archive3DView from '../components/Archive3DView';
 import PanoramaViewer from '../components/PanoramaViewer';
+import ScanDocumentModal from '../components/ScanDocumentModal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArchive,
@@ -391,6 +392,12 @@ const Archives: React.FC = () => {
     observations: '',
     dureeConservation: 10
   });
+
+  const [showDirectArchiveScanModal, setShowDirectArchiveScanModal] = useState(false);
+
+  const handleDirectArchiveScanComplete = (file: File) => {
+    setDirectArchiveForm(prev => ({ ...prev, fichierFile: file, fichier: '' }));
+  };
 
   const openDirectArchiveModal = () => {
     setDirectArchiveForm({
@@ -1782,20 +1789,14 @@ const Archives: React.FC = () => {
                                 }}
                               />
                             </label>
-                            <label className="flex-1 min-w-[140px] cursor-pointer px-4 py-3 bg-surface-50 border-2 border-dashed border-surface-300 rounded-xl hover:bg-surface-100 hover:border-emerald-400 transition-all flex items-center justify-center gap-2 text-sm font-medium text-surface-700">
+                            <button
+                              type="button"
+                              onClick={() => setShowDirectArchiveScanModal(true)}
+                              className="flex-1 min-w-[140px] px-4 py-3 bg-surface-50 border-2 border-dashed border-surface-300 rounded-xl hover:bg-surface-100 hover:border-emerald-400 transition-all flex items-center justify-center gap-2 text-sm font-medium text-surface-700"
+                            >
                               <FontAwesomeIcon icon={faCamera} />
-                              Scanner / Photo
-                              <input
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) setDirectArchiveForm({ ...directArchiveForm, fichierFile: file, fichier: '' });
-                                }}
-                              />
-                            </label>
+                              Scanner un document
+                            </button>
                           </div>
                         </>
                       )}
@@ -1884,6 +1885,12 @@ const Archives: React.FC = () => {
           </div>
         </ArchivePortal>
       )}
+
+      <ScanDocumentModal
+        isOpen={showDirectArchiveScanModal}
+        onClose={() => setShowDirectArchiveScanModal(false)}
+        onScanComplete={handleDirectArchiveScanComplete}
+      />
 
       {/* Modal de détails */}
       {showDetailModal && selectedArchive && (
