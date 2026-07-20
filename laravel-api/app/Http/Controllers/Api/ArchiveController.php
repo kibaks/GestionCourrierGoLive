@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -99,6 +100,7 @@ class ArchiveController extends Controller
             'document.titre' => 'nullable|string|max:255',
             'document.type' => 'nullable|string|max:64',
             'document.fichier' => 'nullable|string|max:512',
+            'documentFichier' => 'nullable|file|max:10240',
         ]);
 
         // Si on archive un courrier, vérifier qu'il est accessible et au statut TRAITE
@@ -136,7 +138,7 @@ class ArchiveController extends Controller
         $archivePar = $user->id;
 
         try {
-            $archive = DB::transaction(function () use ($validated, $courrier, $direction, $entiteId, $dureeConservation, $dateArchivage, $dateDestruction, $archivePar) {
+            $archive = DB::transaction(function () use ($validated, $courrier, $direction, $entiteId, $dureeConservation, $dateArchivage, $dateDestruction, $archivePar, $request) {
                 $numeroClassement = $this->generateNumeroClassement($dateArchivage->year);
 
                 $historique = [[
@@ -148,6 +150,16 @@ class ArchiveController extends Controller
                     'motif' => $validated['motif'] ?? null,
                     'observations' => $validated['observations'] ?? 'Archivage initial',
                 ]];
+
+                // Gestion du fichier document scanné/uploadé
+                $document = $validated['document'] ?? [];
+                if ($request->hasFile('documentFichier') && $request->file('documentFichier')->isValid()) {
+                    $file = $request->file('documentFichier');
+                    $path = $file->store('archives/documents', 'public');
+                    $document['fichierUrl'] = Storage::disk('public')->url($path);
+                    $document['nomFichier'] = $file->getClientOriginalName();
+                    $document['tailleFichier'] = $file->getSize();
+                }
 
                 $archive = Archive::create([
                     'id' => (string) Str::uuid(),
@@ -164,7 +176,7 @@ class ArchiveController extends Controller
                     'date_destruction' => $dateDestruction,
                     'statut' => 'ARCHIVE',
                     'historique' => $historique,
-                    'document' => $validated['document'] ?? null,
+                    'document' => empty($document) ? null : $document,
                 ]);
 
                 $historique[0]['archiveId'] = $archive->id;

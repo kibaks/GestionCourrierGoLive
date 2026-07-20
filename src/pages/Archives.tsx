@@ -39,6 +39,7 @@ import {
   faRedo,
   faLayerGroup,
   faCamera,
+  faUpload,
   faStreetView,
   faCog
 } from '@fortawesome/free-solid-svg-icons';
@@ -368,7 +369,18 @@ const Archives: React.FC = () => {
    * Création directe d'une archive sans courrier (document).
    */
   const [showDirectArchiveModal, setShowDirectArchiveModal] = useState(false);
-  const [directArchiveForm, setDirectArchiveForm] = useState({
+  const [directArchiveForm, setDirectArchiveForm] = useState<{
+    titre: string;
+    type: string;
+    fichier: string;
+    fichierFile?: File;
+    direction: string;
+    entiteId: string;
+    boiteId: string;
+    motif: string;
+    observations: string;
+    dureeConservation: number;
+  }>({
     titre: '',
     type: 'DOCUMENT',
     fichier: '',
@@ -411,7 +423,8 @@ const Archives: React.FC = () => {
         boiteId: directArchiveForm.boiteId || undefined,
         motif: directArchiveForm.motif,
         observations: directArchiveForm.observations,
-        dureeConservation: directArchiveForm.dureeConservation
+        dureeConservation: directArchiveForm.dureeConservation,
+        fichier: directArchiveForm.fichierFile
       }
     );
 
@@ -1729,14 +1742,64 @@ const Archives: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="text-sm font-semibold text-surface-700 mb-2 block">Lien / Fichier (URL)</label>
-                    <input
-                      type="text"
-                      value={directArchiveForm.fichier}
-                      onChange={(e) => setDirectArchiveForm({ ...directArchiveForm, fichier: e.target.value })}
-                      placeholder="https://..."
-                      className="w-full px-4 py-3.5 bg-surface-50 border-2 border-surface-200 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-surface-900 placeholder:text-surface-400"
-                    />
+                    <label className="text-sm font-semibold text-surface-700 mb-2 block">Document / Fichier</label>
+                    <div className="flex flex-col gap-3">
+                      {directArchiveForm.fichierFile ? (
+                        <div className="flex items-center justify-between px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <FontAwesomeIcon icon={faFileAlt} className="text-emerald-600" />
+                            <span className="text-sm text-emerald-900 truncate">{directArchiveForm.fichierFile.name}</span>
+                            <span className="text-xs text-emerald-700">({(directArchiveForm.fichierFile.size / 1024).toFixed(1)} Ko)</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setDirectArchiveForm({ ...directArchiveForm, fichierFile: undefined })}
+                            className="text-sm text-red-600 hover:text-red-700 font-medium"
+                          >
+                            Retirer
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <input
+                            type="text"
+                            value={directArchiveForm.fichier}
+                            onChange={(e) => setDirectArchiveForm({ ...directArchiveForm, fichier: e.target.value })}
+                            placeholder="URL du document (optionnel)"
+                            className="w-full px-4 py-3.5 bg-surface-50 border-2 border-surface-200 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-surface-900 placeholder:text-surface-400"
+                          />
+                          <div className="flex flex-wrap gap-3">
+                            <label className="flex-1 min-w-[140px] cursor-pointer px-4 py-3 bg-surface-50 border-2 border-dashed border-surface-300 rounded-xl hover:bg-surface-100 hover:border-emerald-400 transition-all flex items-center justify-center gap-2 text-sm font-medium text-surface-700">
+                              <FontAwesomeIcon icon={faUpload} />
+                              Charger un fichier
+                              <input
+                                type="file"
+                                accept="image/*,application/pdf"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) setDirectArchiveForm({ ...directArchiveForm, fichierFile: file, fichier: '' });
+                                }}
+                              />
+                            </label>
+                            <label className="flex-1 min-w-[140px] cursor-pointer px-4 py-3 bg-surface-50 border-2 border-dashed border-surface-300 rounded-xl hover:bg-surface-100 hover:border-emerald-400 transition-all flex items-center justify-center gap-2 text-sm font-medium text-surface-700">
+                              <FontAwesomeIcon icon={faCamera} />
+                              Scanner / Photo
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) setDirectArchiveForm({ ...directArchiveForm, fichierFile: file, fichier: '' });
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   <div>

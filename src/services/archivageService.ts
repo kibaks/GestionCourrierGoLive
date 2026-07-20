@@ -511,6 +511,7 @@ class ArchivageService {
       motif?: string;
       observations?: string;
       dureeConservation?: number;
+      fichier?: File;
     }
   ): Promise<Archive> {
     const parametres = this.getParametres();
@@ -524,6 +525,7 @@ class ArchivageService {
         motif: options?.motif,
         observations: options?.observations,
         dureeConservation: options?.dureeConservation ?? parametres.dureeConservationDefaut,
+        fichier: options?.fichier,
       });
       this.archivesCache = null;
       void this.getAllArchives();

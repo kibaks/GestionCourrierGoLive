@@ -2118,13 +2118,41 @@ class LaravelApiService {
     observations?: string;
     dureeConservation?: number;
     document?: { titre?: string; type?: string; fichier?: string };
+    fichier?: File;
   }): Promise<Archive> {
     if (!this.baseUrl) throw new Error('API Laravel non configurée (VITE_LARAVEL_API_URL)');
     const url = `${this.baseUrl}/api/archives`;
+
+    let body: BodyInit;
+    const headers: HeadersInit = { Accept: 'application/json' };
+    const token = getAuthToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    if (payload.fichier) {
+      const formData = new FormData();
+      if (payload.courrierId) formData.append('courrierId', payload.courrierId);
+      if (payload.boiteId) formData.append('boiteId', payload.boiteId);
+      if (payload.entiteId) formData.append('entiteId', payload.entiteId);
+      if (payload.direction) formData.append('direction', payload.direction);
+      if (payload.motif) formData.append('motif', payload.motif);
+      if (payload.observations) formData.append('observations', payload.observations);
+      if (payload.dureeConservation != null) formData.append('dureeConservation', String(payload.dureeConservation));
+      if (payload.document) {
+        formData.append('document[titre]', payload.document.titre || '');
+        formData.append('document[type]', payload.document.type || '');
+        if (payload.document.fichier) formData.append('document[fichier]', payload.document.fichier);
+      }
+      formData.append('documentFichier', payload.fichier);
+      body = formData;
+    } else {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(payload);
+    }
+
     const res = await fetch(url, {
       method: 'POST',
-      headers: buildHeaders(),
-      body: JSON.stringify(payload),
+      headers,
+      body,
     });
     if (!res.ok) {
       const text = await res.text();
