@@ -3,15 +3,14 @@ import {
   Armoire, 
   Etagere, 
   BoiteArchive, 
-  Archive, 
-  ArchiveHistorique,
+  Archive,
   ParametresArchivage,
   DenominationArchivage,
-  Courrier,
   StatutCourrier
 } from '../types';
 import { userSettingsService } from './userSettingsService';
 import { courrierService } from './courrierService';
+import { laravelApiService } from './laravelApiService';
 
 class ArchivageService {
   private locauxKey = 'archivage_locaux';
@@ -202,7 +201,7 @@ class ArchivageService {
           localStorage.setItem(this.boitesKey, JSON.stringify(remainingBoites));
 
           // Filtrer les archives liées aux boîtes supprimées
-          const remainingArchives = this.getAllArchives().filter(a => !boitesToRemove.includes(a.boiteId));
+          const remainingArchives = this.getLocalArchives().filter(a => !boitesToRemove.includes(a.boiteId ?? ''));
           localStorage.setItem(this.archivesKey, JSON.stringify(remainingArchives));
         }
       }
@@ -349,13 +348,15 @@ class ArchivageService {
   }
 
   // ==========================================
-  // ARCHIVES
+  // ARCHIVES — API Laravel avec fallback localStorage
   // ==========================================
-  
-  getAllArchives(): Archive[] {
-    const data = localStorage.getItem(this.archivesKey);
-    if (!data) return [];
-    return JSON.parse(data).map((a: any) => ({
+
+  private archivesCache: Archive[] | null = null;
+  private archivesLastFetch = 0;
+  private readonly archivesCacheTtl = 5000; // ms
+
+  private parseArchiveDates(a: any): Archive {
+    return {
       ...a,
       dateArchivage: new Date(a.dateArchivage),
       dateDestruction: a.dateDestruction ? new Date(a.dateDestruction) : undefined,
@@ -365,39 +366,103 @@ class ArchivageService {
         ...h,
         date: new Date(h.date)
       }))
-    }));
+    };
   }
 
-  getArchivesByCourrier(courrierId: string): Archive | undefined {
-    return this.getAllArchives().find(a => a.courrierId === courrierId);
+  private getLocalArchives(): Archive[] {
+    const data = localStorage.getItem(this.archivesKey);
+    if (!data) return [];
+    try {
+      return JSON.parse(data).map((a: any) => this.parseArchiveDates(a));
+    } catch {
+      return [];
+    }
   }
 
-  getArchivesByBoite(boiteId: string): Archive[] {
-    return this.getAllArchives().filter(a => a.boiteId === boiteId);
+  private setLocalArchives(archives: Archive[]): void {
+    localStorage.setItem(this.archivesKey, JSON.stringify(archives));
   }
 
-  archiverCourrier(
-    courrierId: string, 
-    boiteId: string, 
+  /**
+   * Récupère toutes les archives visibles pour l'utilisateur connecté.
+   * Priorité à l'API Laravel ; fallback localStorage en mode offline.
+   */
+  async getAllArchives(): Promise<Archive[]> {
+    if (laravelApiService.isConfigured()) {
+      try {
+        const archives = await laravelApiService.getArchives();
+        this.archivesCache = archives;
+        this.archivesLastFetch = Date.now();
+        this.setLocalArchives(archives);
+        return archives;
+      } catch (error) {
+        console.warn('⚠️ [ArchivageService] Erreur chargement API archives, fallback localStorage:', error);
+      }
+    }
+    return this.getLocalArchives();
+  }
+
+  /**
+   * Version synchrone utilisant le cache local (utile pour les stats rapides).
+   */
+  getAllArchivesSync(): Archive[] {
+    if (this.archivesCache && Date.now() - this.archivesLastFetch < this.archivesCacheTtl) {
+      return this.archivesCache;
+    }
+    // Tenter de rafraîchir en arrière-plan sans bloquer
+    void this.getAllArchives();
+    return this.getLocalArchives();
+  }
+
+  async getArchivesByCourrier(courrierId: string): Promise<Archive | undefined> {
+    const archives = await this.getAllArchives();
+    return archives.find(a => a.courrierId === courrierId);
+  }
+
+  async getArchivesByBoite(boiteId: string): Promise<Archive[]> {
+    const archives = await this.getAllArchives();
+    return archives.filter(a => a.boiteId === boiteId);
+  }
+
+  /**
+   * Archive un courrier traité.
+   * L'API Laravel génère le numéro de classement et met à jour le statut du courrier.
+   */
+  async archiverCourrier(
+    courrierId: string,
+    boiteId: string,
     archivePar: string,
     options?: {
       motif?: string;
       observations?: string;
       dureeConservation?: number;
     }
-  ): Archive {
-    const archives = this.getAllArchives();
+  ): Promise<Archive> {
     const parametres = this.getParametres();
-    
-    // Générer le numéro de classement
+
+    if (laravelApiService.isConfigured()) {
+      const archive = await laravelApiService.createArchive({
+        courrierId,
+        boiteId,
+        motif: options?.motif,
+        observations: options?.observations,
+        dureeConservation: options?.dureeConservation ?? parametres.dureeConservationDefaut,
+      });
+      // Invalider le cache local
+      this.archivesCache = null;
+      void this.getAllArchives();
+      return archive;
+    }
+
+    // Fallback localStorage (offline)
+    const archives = this.getLocalArchives();
     const annee = new Date().getFullYear();
     const numero = archives.filter(a => a.dateArchivage.getFullYear() === annee).length + 1;
     const numeroClassement = `ARCH-${annee}-${String(numero).padStart(5, '0')}`;
-    
-    const dureeConservation = options?.dureeConservation || parametres.dureeConservationDefaut;
+    const dureeConservation = options?.dureeConservation ?? parametres.dureeConservationDefaut;
     const dateDestruction = new Date();
     dateDestruction.setFullYear(dateDestruction.getFullYear() + dureeConservation);
-    
+
     const newArchive: Archive = {
       id: `archive-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       courrierId,
@@ -422,37 +487,107 @@ class ArchivageService {
       dateCreation: new Date(),
       dateModification: new Date()
     };
-    
+
     newArchive.historique![0].archiveId = newArchive.id;
     archives.push(newArchive);
-    localStorage.setItem(this.archivesKey, JSON.stringify(archives));
-    
-    // Mettre à jour le statut du courrier
-    this.updateCourrierStatut(courrierId, StatutCourrier.ARCHIVE);
-    
+    this.setLocalArchives(archives);
+
+    // Mettre à jour le statut du courrier côté API si possible
+    void courrierService.updateCourrier(courrierId, { statut: StatutCourrier.ARCHIVE }).catch(() => {});
+
     return newArchive;
   }
 
-  private updateCourrierStatut(courrierId: string, statut: StatutCourrier) {
-    const courriersData = localStorage.getItem('courriers');
-    if (courriersData) {
-      const courriers = JSON.parse(courriersData);
-      const index = courriers.findIndex((c: Courrier) => c.id === courrierId);
-      if (index !== -1) {
-        courriers[index].statut = statut;
-        courriers[index].updatedAt = new Date();
-        localStorage.setItem('courriers', JSON.stringify(courriers));
-      }
+  /**
+   * Archive directe d'un document sans courrier.
+   */
+  async archiverDocument(
+    document: Archive['document'],
+    direction: string,
+    archivePar: string,
+    options?: {
+      boiteId?: string;
+      entiteId?: string;
+      motif?: string;
+      observations?: string;
+      dureeConservation?: number;
     }
-    // Mettre à jour Redux / API / Firestore pour que la liste des courriers traités n'affiche pas ce courrier
-    void courrierService.updateCourrier(courrierId, { statut }).catch(() => {});
+  ): Promise<Archive> {
+    const parametres = this.getParametres();
+
+    if (laravelApiService.isConfigured()) {
+      const archive = await laravelApiService.createArchive({
+        direction,
+        entiteId: options?.entiteId,
+        boiteId: options?.boiteId,
+        document,
+        motif: options?.motif,
+        observations: options?.observations,
+        dureeConservation: options?.dureeConservation ?? parametres.dureeConservationDefaut,
+      });
+      this.archivesCache = null;
+      void this.getAllArchives();
+      return archive;
+    }
+
+    // Fallback localStorage
+    const archives = this.getLocalArchives();
+    const annee = new Date().getFullYear();
+    const numero = archives.filter(a => a.dateArchivage.getFullYear() === annee).length + 1;
+    const numeroClassement = `ARCH-${annee}-${String(numero).padStart(5, '0')}`;
+    const dureeConservation = options?.dureeConservation ?? parametres.dureeConservationDefaut;
+    const dateDestruction = new Date();
+    dateDestruction.setFullYear(dateDestruction.getFullYear() + dureeConservation);
+
+    const newArchive: Archive = {
+      id: `archive-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      direction,
+      entiteId: options?.entiteId,
+      boiteId: options?.boiteId,
+      numeroClassement,
+      dateArchivage: new Date(),
+      archivePar,
+      motif: options?.motif,
+      observations: options?.observations,
+      dureeConservation,
+      dateDestruction,
+      statut: 'ARCHIVE',
+      document,
+      historique: [{
+        id: `hist-${Date.now()}`,
+        archiveId: '',
+        action: 'ARCHIVAGE',
+        date: new Date(),
+        utilisateurId: archivePar,
+        motif: options?.motif,
+        observations: 'Archivage direct initial'
+      }],
+      dateCreation: new Date(),
+      dateModification: new Date()
+    };
+
+    newArchive.historique![0].archiveId = newArchive.id;
+    archives.push(newArchive);
+    this.setLocalArchives(archives);
+
+    return newArchive;
   }
 
-  consulterArchive(archiveId: string, utilisateurId: string, motif?: string): Archive | null {
-    const archives = this.getAllArchives();
+  async consulterArchive(archiveId: string, utilisateurId: string, motif?: string): Promise<Archive | null> {
+    if (laravelApiService.isConfigured()) {
+      try {
+        const archive = await laravelApiService.updateArchiveStatut(archiveId, 'CONSULTE', motif);
+        this.archivesCache = null;
+        void this.getAllArchives();
+        return archive;
+      } catch (error) {
+        console.warn('⚠️ [ArchivageService] consulterArchive API échoué:', error);
+      }
+    }
+
+    const archives = this.getLocalArchives();
     const index = archives.findIndex(a => a.id === archiveId);
     if (index === -1) return null;
-    
     archives[index].statut = 'CONSULTE';
     archives[index].dateModification = new Date();
     archives[index].historique = archives[index].historique || [];
@@ -464,16 +599,25 @@ class ArchivageService {
       utilisateurId,
       motif
     });
-    
-    localStorage.setItem(this.archivesKey, JSON.stringify(archives));
+    this.setLocalArchives(archives);
     return archives[index];
   }
 
-  sortirArchive(archiveId: string, utilisateurId: string, motif: string): Archive | null {
-    const archives = this.getAllArchives();
+  async sortirArchive(archiveId: string, utilisateurId: string, motif: string): Promise<Archive | null> {
+    if (laravelApiService.isConfigured()) {
+      try {
+        const archive = await laravelApiService.updateArchiveStatut(archiveId, 'SORTI', motif);
+        this.archivesCache = null;
+        void this.getAllArchives();
+        return archive;
+      } catch (error) {
+        console.warn('⚠️ [ArchivageService] sortirArchive API échoué:', error);
+      }
+    }
+
+    const archives = this.getLocalArchives();
     const index = archives.findIndex(a => a.id === archiveId);
     if (index === -1) return null;
-    
     archives[index].statut = 'SORTI';
     archives[index].dateModification = new Date();
     archives[index].historique = archives[index].historique || [];
@@ -485,16 +629,25 @@ class ArchivageService {
       utilisateurId,
       motif
     });
-    
-    localStorage.setItem(this.archivesKey, JSON.stringify(archives));
+    this.setLocalArchives(archives);
     return archives[index];
   }
 
-  retournerArchive(archiveId: string, utilisateurId: string, observations?: string): Archive | null {
-    const archives = this.getAllArchives();
+  async retournerArchive(archiveId: string, utilisateurId: string, observations?: string): Promise<Archive | null> {
+    if (laravelApiService.isConfigured()) {
+      try {
+        const archive = await laravelApiService.retourArchive(archiveId);
+        this.archivesCache = null;
+        void this.getAllArchives();
+        return archive;
+      } catch (error) {
+        console.warn('⚠️ [ArchivageService] retournerArchive API échoué:', error);
+      }
+    }
+
+    const archives = this.getLocalArchives();
     const index = archives.findIndex(a => a.id === archiveId);
     if (index === -1) return null;
-    
     archives[index].statut = 'ARCHIVE';
     archives[index].dateModification = new Date();
     archives[index].historique = archives[index].historique || [];
@@ -506,8 +659,7 @@ class ArchivageService {
       utilisateurId,
       observations
     });
-    
-    localStorage.setItem(this.archivesKey, JSON.stringify(archives));
+    this.setLocalArchives(archives);
     return archives[index];
   }
 
@@ -699,8 +851,8 @@ class ArchivageService {
     const armoires = this.getAllArmoires();
     const etageres = this.getAllEtageres();
     const boites = this.getAllBoites();
-    const archives = this.getAllArchives();
-    
+    const archives = this.getAllArchivesSync();
+
     return {
       totalLocaux: locaux.filter(l => l.actif).length,
       totalArmoires: armoires.filter(a => a.actif).length,
@@ -714,7 +866,7 @@ class ArchivageService {
         detruit: archives.filter(a => a.statut === 'DETRUIT').length
       },
       boitesPleines: boites.filter(b => b.estPleine).length,
-      archivesADetruire: archives.filter(a => 
+      archivesADetruire: archives.filter(a =>
         a.dateDestruction && new Date(a.dateDestruction) <= new Date()
       ).length
     };
@@ -727,20 +879,20 @@ class ArchivageService {
     etagere?: Etagere;
     boite?: BoiteArchive;
   } | null {
-    const archive = this.getAllArchives().find(a => a.id === archiveId);
+    const archive = this.getAllArchivesSync().find(a => a.id === archiveId);
     if (!archive) return null;
-    
-    const boite = this.getBoiteById(archive.boiteId);
+
+    const boite = archive.boiteId ? this.getBoiteById(archive.boiteId) : undefined;
     if (!boite) return { boite: undefined };
-    
+
     const etagere = this.getAllEtageres().find(e => e.id === boite.etagereId);
     if (!etagere) return { boite };
-    
+
     const armoire = this.getAllArmoires().find(a => a.id === etagere.armoireId);
     if (!armoire) return { boite, etagere };
-    
+
     const local = this.getAllLocaux().find(l => l.id === armoire.localId);
-    
+
     return { local, armoire, etagere, boite };
   }
 }

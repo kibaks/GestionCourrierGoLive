@@ -1136,7 +1136,7 @@ const Archive3DView: React.FC<Archive3DViewProps> = (props) => {
 
   const handleDossierClick = async (archive: Archive) => {
     setSelectedArchive(archive);
-    const courrier = courrierService.getCourrierById(archive.courrierId);
+    const courrier = archive.courrierId ? courrierService.getCourrierById(archive.courrierId) : undefined;
     if (courrier) {
       setSelectedCourrier(courrier);
       const dossiers = await categorieFichierService.getCategoriesFichiersByCourrier(courrier.id);
@@ -1253,7 +1253,7 @@ const Archive3DView: React.FC<Archive3DViewProps> = (props) => {
     ? props.archives
         .filter(a => a.boiteId === selectedBoite.id)
         .map(a => {
-          const courrier = courrierService.getCourrierById(a.courrierId);
+          const courrier = a.courrierId ? courrierService.getCourrierById(a.courrierId) : undefined;
           return courrier ? { archive: a, courrier } : null;
         })
         .filter((item): item is { archive: Archive; courrier: Courrier } => item !== null)

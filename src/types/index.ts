@@ -474,8 +474,10 @@ export interface BoiteArchive {
 // Archive d'un document/courrier
 export interface Archive {
   id: string;
-  courrierId: string;
-  boiteId: string;
+  courrierId?: string | null;
+  boiteId?: string;
+  entiteId?: string;
+  direction?: string;
   numeroClassement: string;
   dateArchivage: Date;
   archivePar: string; // ID utilisateur
@@ -486,6 +488,12 @@ export interface Archive {
   statut: 'ARCHIVE' | 'CONSULTE' | 'SORTI' | 'DETRUIT';
   // Historique des consultations/sorties
   historique?: ArchiveHistorique[];
+  // Document archivé directement (sans courrier)
+  document?: {
+    titre?: string;
+    type?: string;
+    fichier?: string;
+  };
   dateCreation: Date;
   dateModification: Date;
 }

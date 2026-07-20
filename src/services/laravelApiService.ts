@@ -3,7 +3,7 @@
  * Courriers + gestion des fichiers (import) via l'API.
  */
 
-import type { Courrier, CategorieFichier, Utilisateur, Assignation, Rappel, Annotation, WorkflowEtape, EntiteOrganisationnelle, EntiteTypeDefinition, RoleDefinition, Permission } from '../types';
+import type { Courrier, CategorieFichier, Utilisateur, Assignation, Rappel, Annotation, WorkflowEtape, EntiteOrganisationnelle, EntiteTypeDefinition, RoleDefinition, Permission, Archive } from '../types';
 
 function parseCategorieFichierFromApi(raw: Record<string, unknown>): CategorieFichier {
   const dateFields = ['dateCreation', 'dateModification'];
@@ -2077,6 +2077,100 @@ class LaravelApiService {
       throw new Error(`API delete entité: ${res.status} - ${text}`);
     }
   }
+
+  // ——— Archives (MySQL) ———
+  async getArchives(params?: { statut?: string; direction?: string; entiteId?: string; search?: string }): Promise<Archive[]> {
+    if (!this.baseUrl) return [];
+    const search = new URLSearchParams();
+    if (params?.statut) search.set('statut', params.statut);
+    if (params?.direction) search.set('direction', params.direction);
+    if (params?.entiteId) search.set('entite_id', params.entiteId);
+    if (params?.search) search.set('search', params.search);
+    const qs = search.toString();
+    const url = `${this.baseUrl}/api/archives${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, { method: 'GET', headers: buildHeaders(), cache: 'no-store' });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`API archives: ${res.status} ${res.statusText} — ${text.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    const list = Array.isArray(data?.data) ? data.data : [];
+    return list.map((item: Record<string, unknown>) => parseArchiveFromApi(item));
+  }
+
+  async getArchiveById(id: string): Promise<Archive | null> {
+    if (!this.baseUrl) return null;
+    const url = `${this.baseUrl}/api/archives/${encodeURIComponent(id)}`;
+    const res = await fetch(url, { method: 'GET', headers: buildHeaders(), cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw = data?.data ?? data;
+    if (!raw || typeof raw !== 'object') return null;
+    return parseArchiveFromApi(raw as Record<string, unknown>);
+  }
+
+  async createArchive(payload: {
+    courrierId?: string;
+    boiteId?: string;
+    entiteId?: string;
+    direction?: string;
+    motif?: string;
+    observations?: string;
+    dureeConservation?: number;
+    document?: { titre?: string; type?: string; fichier?: string };
+  }): Promise<Archive> {
+    if (!this.baseUrl) throw new Error('API Laravel non configurée (VITE_LARAVEL_API_URL)');
+    const url = `${this.baseUrl}/api/archives`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      const msg = parseApiErrorMessage(res.status, text);
+      throw new Error(msg);
+    }
+    const data = await res.json();
+    const raw = data?.data ?? data;
+    this.invalidate('GET:archives:');
+    return parseArchiveFromApi(raw as Record<string, unknown>);
+  }
+
+  async updateArchiveStatut(id: string, statut: Archive['statut'], motif?: string, observations?: string): Promise<Archive> {
+    if (!this.baseUrl) throw new Error('API Laravel non configurée (VITE_LARAVEL_API_URL)');
+    const url = `${this.baseUrl}/api/archives/${encodeURIComponent(id)}/statut`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: buildHeaders(),
+      body: JSON.stringify({ statut, motif, observations }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`API update archive statut: ${res.status} ${res.statusText} — ${text.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    const raw = data?.data ?? data;
+    this.invalidate('GET:archives:');
+    return parseArchiveFromApi(raw as Record<string, unknown>);
+  }
+
+  async retourArchive(id: string): Promise<Archive> {
+    if (!this.baseUrl) throw new Error('API Laravel non configurée (VITE_LARAVEL_API_URL)');
+    const url = `${this.baseUrl}/api/archives/${encodeURIComponent(id)}/retour`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: buildHeaders(),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`API retour archive: ${res.status} ${res.statusText} — ${text.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    const raw = data?.data ?? data;
+    this.invalidate('GET:archives:');
+    return parseArchiveFromApi(raw as Record<string, unknown>);
+  }
 }
 
 function parseAssignationFromApi(raw: Record<string, unknown>): Assignation {
@@ -2214,6 +2308,27 @@ function parseRoleFromApi(raw: Record<string, unknown>): RoleDefinition {
     dateCreation: typeof dateCreation === 'string' ? new Date(dateCreation) : new Date(),
     dateModification: typeof dateModification === 'string' ? new Date(dateModification) : new Date(),
   };
+}
+
+function parseArchiveFromApi(raw: Record<string, unknown>): Archive {
+  const out = { ...raw } as Record<string, unknown>;
+  if (raw.id != null) out.id = String(raw.id);
+  if (raw.courrierId != null) out.courrierId = String(raw.courrierId);
+  if (raw.boiteId != null) out.boiteId = String(raw.boiteId);
+  if (raw.entiteId != null) out.entiteId = String(raw.entiteId);
+  if (raw.archivePar != null) out.archivePar = String(raw.archivePar);
+  for (const k of ['dateArchivage', 'dateDestruction', 'createdAt', 'updatedAt']) {
+    const v = raw[k] ?? (raw as Record<string, unknown>)[k === 'dateArchivage' ? 'date_archivage' : k === 'dateDestruction' ? 'date_destruction' : k.toLowerCase()];
+    if (typeof v === 'string') out[k] = new Date(v);
+  }
+  if (Array.isArray(raw.historique)) {
+    out.historique = (raw.historique as unknown[]).map((h: unknown) => {
+      const item = h as Record<string, unknown>;
+      if (typeof item.date === 'string') item.date = new Date(item.date);
+      return item;
+    });
+  }
+  return out as unknown as Archive;
 }
 
 export const laravelApiService = new LaravelApiService();

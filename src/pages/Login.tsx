@@ -304,8 +304,9 @@ const Login: React.FC = () => {
 
           {/* Titre */}
           <div className="mb-8">
-            <h2 className="text-3xl font-bold text-surface-900 mb-2">Connexion</h2>
-            <p className="text-surface-500">Accédez à votre espace de travail</p>
+            <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700"><FontAwesomeIcon icon={twoFactorChallenge ? faShieldAlt : faLock} />{twoFactorChallenge ? 'Vérification sécurisée' : 'Accès sécurisé'}</p>
+            <h2 className="mb-2 text-3xl font-bold text-surface-900">{twoFactorChallenge ? 'Code de sécurité' : 'Connexion'}</h2>
+            <p className="text-surface-500">{twoFactorChallenge ? 'Confirmez votre identité pour accéder à votre espace de travail.' : 'Accédez à votre espace de travail'}</p>
           </div>
 
           {error && (

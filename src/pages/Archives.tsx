@@ -5,7 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { archivageService } from '../services/archivageService';
 import { courrierService } from '../services/courrierService';
 import { archive3DConfigService } from '../services/archive3DConfigService';
-import { Archive, Courrier, StatutCourrier, BoiteArchive, LocalArchivage, Armoire, Etagere, SensCourrier, TypeCourrier } from '../types';
+import { laravelApiService } from '../services/laravelApiService';
+import { Archive, Courrier, StatutCourrier, BoiteArchive, LocalArchivage, Armoire, Etagere, SensCourrier, TypeCourrier, Role } from '../types';
 import Archive3DView from '../components/Archive3DView';
 import PanoramaViewer from '../components/PanoramaViewer';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -62,6 +63,7 @@ const Archives: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'archives' | 'a-archiver' | 'statistiques'>('archives');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatut, setFilterStatut] = useState<string>('');
+  const [filterDirection, setFilterDirection] = useState<string>('');
   const [selectedArchive, setSelectedArchive] = useState<Archive | null>(null);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -73,8 +75,6 @@ const Archives: React.FC = () => {
     observations: '',
     dureeConservation: 10
   });
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
   const [expandedLocaux, setExpandedLocaux] = useState<Set<string>>(new Set());
   const [expandedArmoires, setExpandedArmoires] = useState<Set<string>>(new Set());
   const [expandedEtageres, setExpandedEtageres] = useState<Set<string>>(new Set());
@@ -139,20 +139,20 @@ const Archives: React.FC = () => {
     }
   }, [selectedLocal3D]);
 
-  const loadData = () => {
-    const allArchives = archivageService.getAllArchives();
+  const loadData = async () => {
+    const allArchives = await archivageService.getAllArchives();
     setArchives(allArchives);
     setLocaux(archivageService.getAllLocaux());
     setArmoires(archivageService.getAllArmoires());
     setEtageres(archivageService.getAllEtageres());
     setBoites(archivageService.getAllBoites());
     setStats(archivageService.getStatistiques());
-    
-    // Liste des courriers à archiver : statut TRAITE et pas encore archivés (utiliser les archives fraîchement chargées)
-    const loadedCourriers = courrierService.getAllCourriers();
+
+    // Liste des courriers à archiver : statut TRAITE et pas encore archivés
+    const loadedCourriers = await courrierService.getAllCourriers();
     setAllCourriers(loadedCourriers);
-    const archivesCourrierIds = new Set(allArchives.map(a => a.courrierId));
-    setCourriersTraites(loadedCourriers.filter(c => 
+    const archivesCourrierIds = new Set(allArchives.map(a => a.courrierId).filter(Boolean) as string[]);
+    setCourriersTraites(loadedCourriers.filter(c =>
       c.statut === StatutCourrier.TRAITE && !archivesCourrierIds.has(c.id)
     ));
   };
@@ -228,31 +228,61 @@ const Archives: React.FC = () => {
     return map;
   }, [allCourriers]);
 
+  // Vérifie si l'utilisateur connecté est le secrétaire de la Direction Générale
+  const isSecretaireDG = useMemo(() => {
+    if (!user || user.role !== Role.SECRETAIRE) return false;
+    const dir = (user.direction || '').toLowerCase();
+    return !dir || dir.includes('général') || dir.includes('general') || dir.includes('dg');
+  }, [user]);
+
+  const canVoirToutesLesArchives = useMemo(() => {
+    return user?.role === Role.SUPER_ADMIN || user?.role === Role.DIRECTEUR_GENERAL || isSecretaireDG;
+  }, [user, isSecretaireDG]);
+
+  // Direction/entité de l'utilisateur connecté
+  const userDirection = user?.direction || '';
+
   // Filtrage des archives
   const filteredArchives = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     return archives.filter((archive) => {
-      const courrier = courriersById.get(archive.courrierId);
+      const courrier = archive.courrierId ? courriersById.get(archive.courrierId) : undefined;
+      const doc = archive.document;
       const matchesSearch =
         q === '' ||
         archive.numeroClassement.toLowerCase().includes(q) ||
+        (archive.direction || '').toLowerCase().includes(q) ||
         (courrier?.numero || '').toLowerCase().includes(q) ||
-        (courrier?.objet || '').toLowerCase().includes(q);
+        (courrier?.objet || '').toLowerCase().includes(q) ||
+        (doc?.titre || '').toLowerCase().includes(q) ||
+        (archive.motif || '').toLowerCase().includes(q);
       const matchesStatut = filterStatut === '' || archive.statut === filterStatut;
-      return matchesSearch && matchesStatut;
+      const matchesDirection = filterDirection === '' ||
+        archive.direction === filterDirection ||
+        archive.entiteId === filterDirection;
+      return matchesSearch && matchesStatut && matchesDirection;
     });
-  }, [archives, courriersById, searchTerm, filterStatut]);
+  }, [archives, courriersById, searchTerm, filterStatut, filterDirection]);
 
-  // Pagination
-  const totalPages = useMemo(() => Math.ceil(filteredArchives.length / itemsPerPage), [filteredArchives.length]);
-  const paginatedArchives = useMemo(
-    () =>
-      filteredArchives.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
-      ),
-    [filteredArchives, currentPage]
-  );
+  // Regroupement par direction/entité
+  const archivesByDirection = useMemo(() => {
+    const groups = new Map<string, Archive[]>();
+    for (const archive of filteredArchives) {
+      const key = archive.direction || archive.entiteId || 'Sans direction';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(archive);
+    }
+    return groups;
+  }, [filteredArchives]);
+
+  // Directions uniques disponibles (pour le filtre)
+  const availableDirections = useMemo(() => {
+    const dirs = new Set<string>();
+    for (const archive of archives) {
+      if (archive.direction) dirs.add(archive.direction);
+    }
+    return Array.from(dirs).sort();
+  }, [archives]);
 
   const formSteps = [
     { id: 1, title: 'Courrier', description: 'Informations', icon: faFileAlt },
@@ -298,10 +328,10 @@ const Archives: React.FC = () => {
     setSelectedCourrier(null);
   };
 
-  const handleArchiver = () => {
+  const handleArchiver = async () => {
     if (!selectedCourrier || !archiveForm.boiteId || !user) return;
-    
-    archivageService.archiverCourrier(
+
+    await archivageService.archiverCourrier(
       selectedCourrier.id,
       archiveForm.boiteId,
       user.id,
@@ -311,27 +341,82 @@ const Archives: React.FC = () => {
         dureeConservation: archiveForm.dureeConservation
       }
     );
-    
+
     resetArchiveForm();
-    loadData();
+    await loadData();
   };
 
-  const handleConsulter = (archive: Archive) => {
+  const handleConsulter = async (archive: Archive) => {
     if (!user) return;
-    archivageService.consulterArchive(archive.id, user.id, 'Consultation');
-    loadData();
+    await archivageService.consulterArchive(archive.id, user.id, 'Consultation');
+    await loadData();
   };
 
-  const handleSortir = (archive: Archive, motif: string) => {
+  const handleSortir = async (archive: Archive, motif: string) => {
     if (!user) return;
-    archivageService.sortirArchive(archive.id, user.id, motif);
-    loadData();
+    await archivageService.sortirArchive(archive.id, user.id, motif);
+    await loadData();
   };
 
-  const handleRetourner = (archive: Archive) => {
+  const handleRetourner = async (archive: Archive) => {
     if (!user) return;
-    archivageService.retournerArchive(archive.id, user.id, 'Retour après sortie');
-    loadData();
+    await archivageService.retournerArchive(archive.id, user.id, 'Retour après sortie');
+    await loadData();
+  };
+
+  /**
+   * Création directe d'une archive sans courrier (document).
+   */
+  const [showDirectArchiveModal, setShowDirectArchiveModal] = useState(false);
+  const [directArchiveForm, setDirectArchiveForm] = useState({
+    titre: '',
+    type: 'DOCUMENT',
+    fichier: '',
+    direction: user?.direction || '',
+    entiteId: user?.entiteId || '',
+    boiteId: '',
+    motif: '',
+    observations: '',
+    dureeConservation: 10
+  });
+
+  const openDirectArchiveModal = () => {
+    setDirectArchiveForm({
+      titre: '',
+      type: 'DOCUMENT',
+      fichier: '',
+      direction: user?.direction || '',
+      entiteId: user?.entiteId || '',
+      boiteId: '',
+      motif: '',
+      observations: '',
+      dureeConservation: 10
+    });
+    setShowDirectArchiveModal(true);
+  };
+
+  const handleArchiverDocumentDirect = async () => {
+    if (!user || !directArchiveForm.titre || !directArchiveForm.direction) return;
+
+    await archivageService.archiverDocument(
+      {
+        titre: directArchiveForm.titre,
+        type: directArchiveForm.type,
+        fichier: directArchiveForm.fichier || undefined,
+      },
+      directArchiveForm.direction,
+      user.id,
+      {
+        entiteId: directArchiveForm.entiteId || undefined,
+        boiteId: directArchiveForm.boiteId || undefined,
+        motif: directArchiveForm.motif,
+        observations: directArchiveForm.observations,
+        dureeConservation: directArchiveForm.dureeConservation
+      }
+    );
+
+    setShowDirectArchiveModal(false);
+    await loadData();
   };
 
   const getLocalisation = (archive: Archive) => {
@@ -459,6 +544,14 @@ const Archives: React.FC = () => {
               <span className={`px-2 py-0.5 text-xs rounded-full font-bold ${activeTab === 'a-archiver' ? 'bg-white/20' : 'bg-amber-100 text-amber-700'}`}>{courriersTraites.length}</span>
             </button>
             <button
+              onClick={openDirectArchiveModal}
+              className="ml-auto px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-xl shadow-md shadow-emerald-500/20 transition-all flex items-center gap-2"
+              title="Archiver un document directement"
+            >
+              <FontAwesomeIcon icon={faPlus} className="text-sm" />
+              Archiver un document
+            </button>
+            <button
               onClick={() => setActiveTab('statistiques')}
               className={`px-5 py-3 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
                 activeTab === 'statistiques'
@@ -476,14 +569,14 @@ const Archives: React.FC = () => {
         <div className="p-6 sm:p-8">
           {activeTab === 'archives' && (
             <>
-              {/* Barre de recherche + filtre statut */}
+              {/* Barre de recherche + filtres */}
               <div className="flex flex-wrap items-center gap-4 mb-8">
                 <div className="flex-1 min-w-[220px]">
                   <div className="relative">
                     <FontAwesomeIcon icon={faSearch} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm" />
                     <input
                       type="text"
-                      placeholder="Rechercher par numéro, objet..."
+                      placeholder="Rechercher par numéro, objet, direction..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="w-full pl-11 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 bg-slate-50/50 hover:bg-white transition-colors text-slate-800 placeholder-slate-400"
@@ -500,72 +593,114 @@ const Archives: React.FC = () => {
                   <option value="CONSULTE">Consulté</option>
                   <option value="SORTI">Sorti</option>
                 </select>
+                {canVoirToutesLesArchives && availableDirections.length > 0 && (
+                  <select
+                    value={filterDirection}
+                    onChange={(e) => setFilterDirection(e.target.value)}
+                    className="px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 bg-white text-slate-700 font-medium cursor-pointer min-w-[200px]"
+                  >
+                    <option value="">Toutes les directions</option>
+                    {availableDirections.map(dir => (
+                      <option key={dir} value={dir}>{dir}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
-              {/* Liste des archives — cartes modernes */}
-              <div className="space-y-4">
-                {paginatedArchives.length > 0 ? (
-                  paginatedArchives.map((archive) => {
-                    const courrier = courrierService.getCourrierById(archive.courrierId);
-                    return (
-                      <div
-                        key={archive.id}
-                        className="flex flex-wrap items-center justify-between gap-4 p-5 bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md hover:border-slate-300/80 transition-all duration-200"
-                      >
-                        <div className="flex items-center gap-4 flex-1 min-w-0">
-                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center flex-shrink-0 border border-amber-200/60">
-                            <FontAwesomeIcon icon={faFileAlt} className="w-6 h-6 text-amber-600" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-wrap items-center gap-2 mb-1">
-                              <span className="font-bold text-slate-900">{archive.numeroClassement}</span>
-                              {getStatutBadge(archive.statut)}
-                            </div>
-                            <p className="text-sm text-slate-600 truncate mb-2">
-                              {courrier?.objet || 'Courrier non trouvé'}
-                            </p>
-                            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
-                              <span className="flex items-center gap-1.5">
-                                <FontAwesomeIcon icon={faCalendar} className="w-3.5 h-3.5 text-amber-500" />
-                                {new Date(archive.dateArchivage).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
-                              </span>
-                              <span className="flex items-center gap-1.5 truncate max-w-[280px]" title={getLocalisation(archive)}>
-                                <FontAwesomeIcon icon={faMapMarkerAlt} className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                                {getLocalisation(archive)}
-                              </span>
-                            </div>
-                          </div>
+              {!canVoirToutesLesArchives && userDirection && (
+                <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200 text-sm text-blue-800">
+                  <FontAwesomeIcon icon={faFilter} className="mr-2" />
+                  Vous visualisez les archives de votre direction : <strong>{userDirection}</strong>
+                </div>
+              )}
+
+              {/* Liste des archives — cartes modernes, regroupées par direction */}
+              <div className="space-y-8">
+                {filteredArchives.length > 0 ? (
+                  Array.from(archivesByDirection.entries()).map(([direction, groupArchives]) => (
+                    <div key={direction} className="space-y-3">
+                      <div className="flex items-center gap-3 pb-2 border-b border-slate-200">
+                        <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                          <FontAwesomeIcon icon={faFolder} className="text-amber-600" />
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <button
-                            onClick={() => { setSelectedArchive(archive); setShowDetailModal(true); }}
-                            className="p-3 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-colors"
-                            title="Voir détails"
-                          >
-                            <FontAwesomeIcon icon={faEye} className="text-lg" />
-                          </button>
-                          {archive.statut === 'ARCHIVE' && (
-                            <button
-                              onClick={() => handleSortir(archive, 'Sortie pour consultation')}
-                              className="p-3 text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-colors"
-                              title="Sortir"
-                            >
-                              <FontAwesomeIcon icon={faSignOutAlt} className="text-lg" />
-                            </button>
-                          )}
-                          {archive.statut === 'SORTI' && (
-                            <button
-                              onClick={() => handleRetourner(archive)}
-                              className="p-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
-                              title="Retourner"
-                            >
-                              <FontAwesomeIcon icon={faUndo} className="text-lg" />
-                            </button>
-                          )}
-                        </div>
+                        <h3 className="text-base font-bold text-slate-800">{direction}</h3>
+                        <span className="ml-auto text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+                          {groupArchives.length} archive{groupArchives.length !== 1 ? 's' : ''}
+                        </span>
                       </div>
-                    );
-                  })
+                      <div className="space-y-3">
+                        {groupArchives.map((archive) => {
+                          const courrier = archive.courrierId ? courrierService.getCourrierById(archive.courrierId) : undefined;
+                          const titre = archive.document?.titre || courrier?.objet || 'Document archivé';
+                          return (
+                            <div
+                              key={archive.id}
+                              className="flex flex-wrap items-center justify-between gap-4 p-5 bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md hover:border-slate-300/80 transition-all duration-200"
+                            >
+                              <div className="flex items-center gap-4 flex-1 min-w-0">
+                                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center flex-shrink-0 border border-amber-200/60">
+                                  <FontAwesomeIcon icon={archive.document ? faFileAlt : faArchive} className="w-6 h-6 text-amber-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                                    <span className="font-bold text-slate-900">{archive.numeroClassement}</span>
+                                    {getStatutBadge(archive.statut)}
+                                    {archive.document && (
+                                      <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-100 text-emerald-700">
+                                        Document direct
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-sm text-slate-600 truncate mb-2" title={titre}>
+                                    {titre}
+                                  </p>
+                                  <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+                                    <span className="flex items-center gap-1.5">
+                                      <FontAwesomeIcon icon={faCalendar} className="w-3.5 h-3.5 text-amber-500" />
+                                      {new Date(archive.dateArchivage).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    </span>
+                                    {archive.boiteId && (
+                                      <span className="flex items-center gap-1.5 truncate max-w-[280px]" title={getLocalisation(archive)}>
+                                        <FontAwesomeIcon icon={faMapMarkerAlt} className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                                        {getLocalisation(archive)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <button
+                                  onClick={() => { setSelectedArchive(archive); setShowDetailModal(true); }}
+                                  className="p-3 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-colors"
+                                  title="Voir détails"
+                                >
+                                  <FontAwesomeIcon icon={faEye} className="text-lg" />
+                                </button>
+                                {archive.statut === 'ARCHIVE' && (
+                                  <button
+                                    onClick={() => handleSortir(archive, 'Sortie pour consultation')}
+                                    className="p-3 text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-colors"
+                                    title="Sortir"
+                                  >
+                                    <FontAwesomeIcon icon={faSignOutAlt} className="text-lg" />
+                                  </button>
+                                )}
+                                {archive.statut === 'SORTI' && (
+                                  <button
+                                    onClick={() => handleRetourner(archive)}
+                                    className="p-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
+                                    title="Retourner"
+                                  >
+                                    <FontAwesomeIcon icon={faUndo} className="text-lg" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
                 ) : (
                   <div className="text-center py-16 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50">
                     <div className="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-5 shadow-inner">
@@ -576,32 +711,6 @@ const Archives: React.FC = () => {
                   </div>
                 )}
               </div>
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex flex-wrap items-center justify-between gap-4 mt-8 pt-6 border-t border-slate-200">
-                  <p className="text-sm font-medium text-slate-500">
-                    {filteredArchives.length} archive{filteredArchives.length !== 1 ? 's' : ''}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      className="p-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <FontAwesomeIcon icon={faChevronLeft} />
-                    </button>
-                    <span className="px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-100 rounded-xl min-w-[80px] text-center">{currentPage} / {totalPages}</span>
-                    <button
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                      className="p-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <FontAwesomeIcon icon={faChevronRight} />
-                    </button>
-                  </div>
-                </div>
-              )}
             </>
           )}
 
@@ -1543,6 +1652,176 @@ const Archives: React.FC = () => {
         </ArchivePortal>
       )}
 
+      {/* Modal d'archivage direct d'un document */}
+      {showDirectArchiveModal && (
+        <ArchivePortal>
+          <div className="fixed inset-0 z-[50000] flex items-center justify-center bg-surface-900/60 backdrop-blur-sm">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl mx-4 border border-surface-200 max-h-[90vh] flex flex-col animate-slideIn">
+              <div className="flex-shrink-0 px-6 py-4 border-b border-surface-100 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-t-3xl flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                    <FontAwesomeIcon icon={faFileAlt} className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Archiver un document</h3>
+                    <p className="text-white/70 text-xs">Enregistrement direct sans courrier</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowDirectArchiveModal(false)}
+                  className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors flex items-center justify-center"
+                >
+                  <FontAwesomeIcon icon={faTimes} className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                <div className="text-center mb-4">
+                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white mb-4 shadow-lg shadow-emerald-500/25">
+                    <FontAwesomeIcon icon={faFileAlt} className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-xl font-bold text-surface-900">Informations du document</h3>
+                  <p className="text-surface-500 mt-2">Renseignez les champs pour classer le document</p>
+                </div>
+
+                <div className="space-y-5">
+                  <div>
+                    <label className="text-sm font-semibold text-surface-700 mb-2 block">
+                      Titre du document <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={directArchiveForm.titre}
+                      onChange={(e) => setDirectArchiveForm({ ...directArchiveForm, titre: e.target.value })}
+                      placeholder="Ex: Procès-verbal de réunion"
+                      className="w-full px-4 py-3.5 bg-surface-50 border-2 border-surface-200 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-surface-900 placeholder:text-surface-400"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                      <label className="text-sm font-semibold text-surface-700 mb-2 block">Type</label>
+                      <select
+                        value={directArchiveForm.type}
+                        onChange={(e) => setDirectArchiveForm({ ...directArchiveForm, type: e.target.value })}
+                        className="w-full px-4 py-3.5 bg-surface-50 border-2 border-surface-200 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-surface-900"
+                      >
+                        <option value="DOCUMENT">Document</option>
+                        <option value="PV">Procès-verbal</option>
+                        <option value="CONTRAT">Contrat</option>
+                        <option value="RAPPORT">Rapport</option>
+                        <option value="NOTE">Note de service</option>
+                        <option value="AUTRE">Autre</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-surface-700 mb-2 block">
+                        Direction / Entité <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={directArchiveForm.direction}
+                        onChange={(e) => setDirectArchiveForm({ ...directArchiveForm, direction: e.target.value })}
+                        placeholder="Direction..."
+                        className="w-full px-4 py-3.5 bg-surface-50 border-2 border-surface-200 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-surface-900 placeholder:text-surface-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-surface-700 mb-2 block">Lien / Fichier (URL)</label>
+                    <input
+                      type="text"
+                      value={directArchiveForm.fichier}
+                      onChange={(e) => setDirectArchiveForm({ ...directArchiveForm, fichier: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full px-4 py-3.5 bg-surface-50 border-2 border-surface-200 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-surface-900 placeholder:text-surface-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-surface-700 mb-2 block">Boîte d'archive</label>
+                    <select
+                      value={directArchiveForm.boiteId}
+                      onChange={(e) => setDirectArchiveForm({ ...directArchiveForm, boiteId: e.target.value })}
+                      className="w-full px-4 py-3.5 bg-surface-50 border-2 border-surface-200 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-surface-900"
+                    >
+                      <option value="">-- Sélectionner une boîte (optionnel) --</option>
+                      {boites.filter(b => b.actif).map((boite) => {
+                        const etagere = etageres.find(e => e.id === boite.etagereId);
+                        const armoire = etagere ? armoires.find(a => a.id === etagere.armoireId) : undefined;
+                        const local = armoire ? locaux.find(l => l.id === armoire.localId) : undefined;
+                        return (
+                          <option key={boite.id} value={boite.id}>
+                            {local?.nom || '?'} / {armoire?.nom || '?'} / {etagere?.nom || '?'} / {boite.numero}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                      <label className="text-sm font-semibold text-surface-700 mb-2 block">Motif</label>
+                      <input
+                        type="text"
+                        value={directArchiveForm.motif}
+                        onChange={(e) => setDirectArchiveForm({ ...directArchiveForm, motif: e.target.value })}
+                        placeholder="Motif d'archivage"
+                        className="w-full px-4 py-3.5 bg-surface-50 border-2 border-surface-200 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-surface-900 placeholder:text-surface-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-surface-700 mb-2 block">Durée de conservation (ans)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={directArchiveForm.dureeConservation}
+                        onChange={(e) => setDirectArchiveForm({ ...directArchiveForm, dureeConservation: parseInt(e.target.value) || 10 })}
+                        className="w-full px-4 py-3.5 bg-surface-50 border-2 border-surface-200 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-surface-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-surface-700 mb-2 block">Observations</label>
+                    <textarea
+                      value={directArchiveForm.observations}
+                      onChange={(e) => setDirectArchiveForm({ ...directArchiveForm, observations: e.target.value })}
+                      rows={3}
+                      placeholder="Notes complémentaires..."
+                      className="w-full px-4 py-3.5 bg-surface-50 border-2 border-surface-200 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-surface-900 placeholder:text-surface-400 resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-shrink-0 px-6 py-4 border-t border-surface-100 flex justify-end items-center gap-3 bg-surface-50 rounded-b-3xl">
+                <button
+                  onClick={() => setShowDirectArchiveModal(false)}
+                  className="px-5 py-2.5 text-sm font-semibold text-surface-700 bg-white border-2 border-surface-200 rounded-xl hover:bg-surface-50 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleArchiverDocumentDirect}
+                  disabled={!directArchiveForm.titre || !directArchiveForm.direction}
+                  className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all flex items-center gap-2 ${
+                    directArchiveForm.titre && directArchiveForm.direction
+                      ? 'text-white bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 shadow-lg shadow-emerald-500/25'
+                      : 'text-surface-400 bg-surface-100 cursor-not-allowed'
+                  }`}
+                >
+                  <FontAwesomeIcon icon={faArchive} className="w-4 h-4" />
+                  Archiver le document
+                </button>
+              </div>
+            </div>
+          </div>
+        </ArchivePortal>
+      )}
+
       {/* Modal de détails */}
       {showDetailModal && selectedArchive && (
         <ArchivePortal>
@@ -1573,20 +1852,42 @@ const Archives: React.FC = () => {
                 <div className="bg-surface-50 rounded-lg p-4">
                   <p className="text-xs text-surface-500 mb-1">Date de destruction prévue</p>
                   <p className="font-medium text-surface-900">
-                    {selectedArchive.dateDestruction 
+                    {selectedArchive.dateDestruction
                       ? new Date(selectedArchive.dateDestruction).toLocaleDateString('fr-FR')
                       : 'Non définie'}
                   </p>
                 </div>
+                <div className="bg-surface-50 rounded-lg p-4">
+                  <p className="text-xs text-surface-500 mb-1">Direction / Entité</p>
+                  <p className="font-medium text-surface-900">
+                    {selectedArchive.direction || selectedArchive.entiteId || 'Non renseignée'}
+                  </p>
+                </div>
+                <div className="bg-surface-50 rounded-lg p-4">
+                  <p className="text-xs text-surface-500 mb-1">Durée de conservation</p>
+                  <p className="font-medium text-surface-900">{selectedArchive.dureeConservation} ans</p>
+                </div>
               </div>
-              
-              <div className="bg-surface-50 rounded-lg p-4 mb-6">
-                <p className="text-xs text-surface-500 mb-1">Localisation</p>
-                <p className="font-medium text-surface-900 flex items-center gap-2">
-                  <FontAwesomeIcon icon={faMapMarkerAlt} className="text-primary-500" />
-                  {getLocalisation(selectedArchive)}
-                </p>
-              </div>
+
+              {selectedArchive.document && (
+                <div className="bg-surface-50 rounded-lg p-4 mb-6">
+                  <p className="text-xs text-surface-500 mb-1">Document archivé</p>
+                  <p className="font-semibold text-surface-900">{selectedArchive.document.titre}</p>
+                  {selectedArchive.document.fichier && (
+                    <p className="text-xs text-surface-500 mt-1 truncate">{selectedArchive.document.fichier}</p>
+                  )}
+                </div>
+              )}
+
+              {selectedArchive.boiteId && (
+                <div className="bg-surface-50 rounded-lg p-4 mb-6">
+                  <p className="text-xs text-surface-500 mb-1">Localisation</p>
+                  <p className="font-medium text-surface-900 flex items-center gap-2">
+                    <FontAwesomeIcon icon={faMapMarkerAlt} className="text-primary-500" />
+                    {getLocalisation(selectedArchive)}
+                  </p>
+                </div>
+              )}
 
               {/* Historique */}
               <div>
@@ -1613,12 +1914,12 @@ const Archives: React.FC = () => {
               </div>
             </div>
             <div className="flex justify-end px-6 py-4 border-t border-surface-200 bg-surface-50 rounded-b-2xl">
-              <button
-                onClick={() => {
-                  if (selectedArchive?.boiteId) {
+              {selectedArchive?.boiteId && (
+                <button
+                  onClick={() => {
                     const params = new URLSearchParams();
-                    params.set('courrierId', selectedArchive.courrierId);
-                    params.set('boiteId', selectedArchive.boiteId);
+                    if (selectedArchive.courrierId) params.set('courrierId', selectedArchive.courrierId);
+                    params.set('boiteId', selectedArchive.boiteId!);
                     // Forcer l'onglet environnement physique et la vue 3D
                     setActiveTab('archives');
                     setView3DMode('3d');
@@ -1626,14 +1927,14 @@ const Archives: React.FC = () => {
                     setDeepLinkHandled(false);
                     navigate(`/archives?${params.toString()}`);
                     setShowDetailModal(false);
-                  }
-                }}
-                className="px-4 py-2 mr-3 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
-                title="Localiser dans la vue 3D"
-              >
-                <FontAwesomeIcon icon={faCube} className="mr-2" />
-                Localiser en 3D
-              </button>
+                  }}
+                  className="px-4 py-2 mr-3 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+                  title="Localiser dans la vue 3D"
+                >
+                  <FontAwesomeIcon icon={faCube} className="mr-2" />
+                  Localiser en 3D
+                </button>
+              )}
               <button
                 onClick={() => setShowDetailModal(false)}
                 className="px-4 py-2 bg-surface-200 text-surface-700 rounded-lg hover:bg-surface-300 transition-colors"

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AnnotationsController;
+use App\Http\Controllers\Api\ArchiveController;
 use App\Http\Controllers\Api\AssignationsController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConfigController;
@@ -102,6 +103,13 @@ Route::middleware('auth:api')->group(function () {
 
     // Courriers (apiResource : index, show, store, update, destroy)
     Route::apiResource('courriers', CourrierController::class);
+
+    // Archives : courriers traités et documents directement archivés
+    Route::get('archives', [ArchiveController::class, 'index']);
+    Route::post('archives', [ArchiveController::class, 'store']);
+    Route::get('archives/{id}', [ArchiveController::class, 'show']);
+    Route::patch('archives/{id}/statut', [ArchiveController::class, 'updateStatut']);
+    Route::post('archives/{id}/retour', [ArchiveController::class, 'retour']);
 
     // Dossiers de classement + mapping courrier -> dossier (MySQL priorité, persistance hors ligne)
     Route::get('folders', [CourrierFolderController::class, 'index']);

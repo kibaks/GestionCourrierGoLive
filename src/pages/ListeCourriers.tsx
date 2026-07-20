@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom';
 import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { courrierService } from '../services/courrierService';
-import { Courrier, StatutCourrier, TypeCourrier, Priorite, Role, CategorieFichier, WorkflowEtape, Assignation, Permission, CategorieCourrier, SensCourrier, TypeEntiteOrganisationnelle, Utilisateur } from '../types';
+import { Courrier, StatutCourrier, TypeCourrier, Priorite, Role, CategorieFichier, WorkflowEtape, Assignation, Permission, CategorieCourrier, SensCourrier, TypeEntiteOrganisationnelle, Utilisateur, Archive } from '../types';
 import { categorieFichierService } from '../services/categorieFichierService';
 import { categorieCourrierService } from '../services/categorieCourrierService';
 import { auth } from '../config/firebase';
@@ -330,6 +330,7 @@ const ListeCourriers: React.FC = () => {
   
   const [courriers, setCourriers] = useState<Courrier[]>([]);
   const [allCourriers, setAllCourriers] = useState<Courrier[]>([]);
+  const [archives, setArchives] = useState<Archive[]>([]);
   const [loadingCourriers, setLoadingCourriers] = useState(false);
   const [loadingMoreCourriers, setLoadingMoreCourriers] = useState(false);
   const [loadingOperations, setLoadingOperations] = useState<{
@@ -1210,7 +1211,7 @@ const ListeCourriers: React.FC = () => {
 
   // Calcul des statistiques (les courriers archivés ne comptent pas dans "traités")
   const stats = React.useMemo(() => {
-    const archivedIds = new Set(archivageService.getAllArchives().map(a => a.courrierId));
+    const archivedIds = new Set(archives.map(a => a.courrierId).filter(Boolean) as string[]);
     // Source complète = tous les courriers accessibles
     const sourceCourriers = allCourriers.length > 0 ? allCourriers : courriers;
     // Le total global (tous les courriers sans filtre)
@@ -1277,7 +1278,7 @@ const ListeCourriers: React.FC = () => {
     const orientesDirecteurs = statsCourriers.filter(c => c.statut === StatutCourrier.ORIENTE_DIRECTEUR).length;
     const traites = statsCourriers.filter(c => c.statut === StatutCourrier.TRAITE && !archivedIds.has(c.id)).length;
     return { total, filtered, byStatut, byType, bySens, bySensType, byPriorite, urgent, enAttente, orientesDirecteurs, traites };
-  }, [allCourriers, courriers, filteredCourriers, internalNameSet, filters, debouncedSearch]);
+  }, [allCourriers, courriers, filteredCourriers, internalNameSet, filters, debouncedSearch, archives]);
 
   // Calcul des statistiques des catégories (catégorie « effective » = existante, pour ne pas compter les orphelins)
   const folderStats = React.useMemo(() => {
@@ -1400,10 +1401,20 @@ const ListeCourriers: React.FC = () => {
 
   useEffect(() => {
     loadCourriers();
+    // Charger les archives pour les stats (exclusion des courriers archivés des "traités")
+    let cancelled = false;
+    archivageService.getAllArchives().then(data => {
+      if (!cancelled) setArchives(data);
+    }).catch(() => {
+      if (!cancelled) setArchives([]);
+    });
     // loadStorageInfo fait N+1 appels API (1 par courrier) — différé pour ne pas
     // saturer PHP-FPM pendant le chargement principal + uploads en arrière-plan
     const storageTimer = setTimeout(() => { loadStorageInfo(); }, 5000);
-    return () => clearTimeout(storageTimer);
+    return () => {
+      cancelled = true;
+      clearTimeout(storageTimer);
+    };
   }, [user]);
 
   useEffect(() => {

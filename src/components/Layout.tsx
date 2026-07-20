@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import type { AppDispatch } from '../store/store';
@@ -247,13 +247,23 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const canEnregistrer = hasRole(Role.SECRETAIRE) || hasRole(Role.DIRECTEUR_GENERAL) || hasRole(Role.SUPER_ADMIN);
 
+  // Détermine si le secrétaire connecté est celui de la Direction Générale (accès aux archives)
+  const isSecretaireDG = useMemo(() => {
+    if (!user || user.role !== Role.SECRETAIRE) return false;
+    const dir = (user.direction || '').toLowerCase();
+    return !dir || dir.includes('général') || dir.includes('general') || dir.includes('dg');
+  }, [user]);
+
+  const canVoirArchives = hasRole(Role.SUPER_ADMIN) || hasRole(Role.DIRECTEUR_GENERAL) || isSecretaireDG;
+
   // Menu principal (secrétaire inclus) : tout le monde a accès au tableau de bord,
-  // mais certaines sections avancées restent cachées au secrétaire (archives, organigramme, annotations, planning).
+  // mais certaines sections avancées restent cachées au secrétaire (organigramme, annotations, planning).
+  // Les archives sont accessibles au secrétaire de la Direction Générale.
   const simpleMenuItems = [
     { path: '/dashboard', label: 'Tableau de bord', icon: faChartLine },
     { path: '/rappels', label: 'Rappels', icon: faClock },
     { path: '/cahier-registre', label: 'Registre', icon: faBook },
-    { path: '/archives', label: 'Archives', icon: faArchive, hiddenForRoles: [Role.SECRETAIRE] as Role[] },
+    { path: '/archives', label: 'Archives', icon: faArchive, visible: canVoirArchives },
     { path: '/organigramme', label: 'Organigramme', icon: faSitemap, hiddenForRoles: [Role.SECRETAIRE] as Role[] },
     { path: '/workflow', label: 'Annotations', icon: faSyncAlt, hiddenForRoles: [Role.SECRETAIRE] as Role[] },
     { path: '/planning', label: 'Planning', icon: faCalendar, hiddenForRoles: [Role.SECRETAIRE] as Role[] },
@@ -544,6 +554,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 if (roles && roles.length > 0 && !roles.some(r => hasRole(r))) return null;
                 const hiddenFor = (item as { hiddenForRoles?: Role[] }).hiddenForRoles;
                 if (hiddenFor?.length && user?.role && hiddenFor.includes(user.role)) return null;
+                const visible = (item as { visible?: boolean }).visible;
+                if (visible === false) return null;
                 return (
                   <Link
                     key={item.path}
