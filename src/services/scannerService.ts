@@ -499,6 +499,8 @@ class ScannerService {
     imageScaleMode?: ScanImageScaleMode;
     /** Mode de scan : une page ou plusieurs pages fusionnées */
     scanType?: ScanType;
+    /** Nombre de pages à scanner : 0 = toutes, N = nombre de pages (défaut 1 si single, 0 si multiple) */
+    pages?: number;
     compress?: boolean;
     compressionLimitKb?: number;
     /** Signal pour annuler le scan (AbortController.signal) */
@@ -552,7 +554,8 @@ class ScannerService {
           pageSize: options.pageSize || 'A4',
           orientation: options.orientation || 'auto',
           imageScaleMode: options.imageScaleMode || 'fill-page',
-          scanType: options.scanType || 'single'
+          scanType: options.scanType || 'single',
+          pages: options.pages != null ? options.pages : (options.scanType === 'multiple' ? 0 : 1)
         }),
       });
 
