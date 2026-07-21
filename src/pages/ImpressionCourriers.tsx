@@ -258,7 +258,7 @@ const ImpressionCourriers: React.FC = () => {
             ) : null}
             <div style={{ flex: 1, textAlign: settings.headerAlign === 'center' ? 'center' : 'left' }}>
               <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#111827', textAlign: settings.headerAlign === 'right' ? 'right' : settings.headerAlign === 'center' ? 'center' : 'left' }}>
-                {applyTitleCase((settings.headerTitle || '').trim() || 'Fiche d’enregistrement', settings.headerTitleCase)}
+                {applyTitleCase(exportSettingsService.getHeaderTitle(settings.headerTitle), settings.headerTitleCase)}
               </h1>
               {(settings.headerSubtitle || '').trim() ? (
                 <p style={{ margin: '6px 0', color: '#6b7280', textAlign: settings.headerAlign === 'right' ? 'right' : settings.headerAlign === 'center' ? 'center' : 'left' }}>{applyTitleCase(settings.headerSubtitle || '', settings.headerTitleCase)}</p>

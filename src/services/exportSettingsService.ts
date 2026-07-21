@@ -1,3 +1,5 @@
+import { generalSettingsService } from './generalSettingsService';
+
 export interface ExportColumn {
   key: string;
   label: string;
@@ -58,10 +60,11 @@ class ExportSettingsService {
       }
     }
     
-    // Paramètres par défaut
+    // Paramètres par défaut (peuvent être surchargés par les paramètres généraux)
+    const general = generalSettingsService.getSettings();
     return {
       format: 'A4',
-      orientation: 'landscape',
+      orientation: general.defaultPageOrientation || 'landscape',
       scale: 2,
       quality: 'high',
       backgroundColor: '#ffffff',
@@ -113,53 +116,19 @@ class ExportSettingsService {
     }
   }
 
-  // Formater une date selon les paramètres
+  // Formater une date selon les paramètres généraux (fuseau horaire, format de date/heure)
   formatDate(date: Date | string, includeTime: boolean = false): string {
-    const settings = this.getDefaultSettings();
-    const dateObj = typeof date === 'string' ? new Date(date) : date;
-    
-    if (isNaN(dateObj.getTime())) return '';
-    
-    const format = settings.dateFormat || 'DD/MM/YYYY';
-    
-    // Options de formatage de base
-    const dateOptions: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', year: 'numeric' };
-    const timeOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
-    
-    switch (format) {
-      case 'DD/MM/YYYY':
-        if (includeTime) {
-          return dateObj.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-        }
-        return dateObj.toLocaleDateString('fr-FR', dateOptions);
-      case 'DD/MM/YY':
-        if (includeTime) {
-          return dateObj.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
-        }
-        return dateObj.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
-      case 'YYYY-MM-DD':
-        if (includeTime) {
-          return dateObj.toISOString().slice(0, 16).replace('T', ' ');
-        }
-        return dateObj.toISOString().split('T')[0];
-      case 'MM/DD/YYYY':
-        if (includeTime) {
-          return dateObj.toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-        }
-        return dateObj.toLocaleDateString('en-US', dateOptions);
-      case 'custom':
-        // Pour le format personnalisé, on utilise le customDateFormat
-        const customFormat = settings.customDateFormat || 'dd/MM/yyyy';
-        if (includeTime) {
-          return dateObj.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-        }
-        return dateObj.toLocaleDateString('fr-FR', dateOptions);
-      default:
-        if (includeTime) {
-          return dateObj.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-        }
-        return dateObj.toLocaleDateString('fr-FR', dateOptions);
-    }
+    return generalSettingsService.formatDate(date, includeTime);
+  }
+
+  /**
+   * Retourne le titre d'en-tête à utiliser pour les exports : le titre explicitement
+   * défini dans les paramètres d'export, sinon le nom de l'entreprise configuré dans
+   * les paramètres généraux, sinon un libellé par défaut.
+   */
+  getHeaderTitle(explicitTitle?: string, fallback = 'Fiche d\'enregistrement'): string {
+    const general = generalSettingsService.getSettings();
+    return (explicitTitle || '').trim() || general.companyName.trim() || fallback;
   }
 
   // Réinitialiser aux paramètres par défaut

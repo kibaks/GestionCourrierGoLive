@@ -4714,7 +4714,7 @@ const getAppropriateDirector = (user: Utilisateur | null) => {
       columns.forEach(col => col.width = (col.width || 0.1) / totalWidth);
     }
     
-    const headerTitle = applyTitleCase((params.headerTitle || '').trim() || 'Fiche d’enregistrement', params.headerTitleCase);
+    const headerTitle = applyTitleCase(exportSettingsService.getHeaderTitle(params.headerTitle), params.headerTitleCase);
     const headerSubtitle = (params.headerSubtitle || '').trim();
     const headerLogo = params.headerLogoUrl;
 
@@ -5169,7 +5169,7 @@ const getAppropriateDirector = (user: Utilisateur | null) => {
             " />
           ` : ``}
           <div style="flex:1; width:100%; text-align:${exportSettings.headerAlign === 'right' ? 'right' : (exportSettings.headerAlign === 'center' ? 'center' : 'left')};">
-            <h1 style="text-align:${exportSettings.headerAlign === 'right' ? 'right' : (exportSettings.headerAlign === 'center' ? 'center' : 'left')};">${applyTitleCase((exportSettings.headerTitle || '').trim() || 'Fiche d’enregistrement', exportSettings.headerTitleCase)}</h1>
+            <h1 style="text-align:${exportSettings.headerAlign === 'right' ? 'right' : (exportSettings.headerAlign === 'center' ? 'center' : 'left')};">${applyTitleCase(exportSettingsService.getHeaderTitle(exportSettings.headerTitle), exportSettings.headerTitleCase)}</h1>
             ${(exportSettings.headerSubtitle || '').trim() ? `<p style="text-align:${exportSettings.headerAlign === 'right' ? 'right' : (exportSettings.headerAlign === 'center' ? 'center' : 'left')};">${applyTitleCase(exportSettings.headerSubtitle || '', exportSettings.headerTitleCase)}</p>` : ``}
             <p style="text-align:${exportSettings.headerAlign === 'right' ? 'right' : (exportSettings.headerAlign === 'center' ? 'center' : 'left')};">Généré le ${new Date().toLocaleDateString('fr-FR', { 
               day: '2-digit', 
@@ -5558,7 +5558,7 @@ const getAppropriateDirector = (user: Utilisateur | null) => {
       };
 
       const colCount = headers.length;
-      const titleText = applyTitleCase((exportSettings.headerTitle || '').trim() || 'Fiche d’enregistrement', exportSettings.headerTitleCase);
+      const titleText = applyTitleCase(exportSettingsService.getHeaderTitle(exportSettings.headerTitle), exportSettings.headerTitleCase);
       const subtitleText = applyTitleCase((exportSettings.headerSubtitle || '').trim(), exportSettings.headerTitleCase);
       const infoText = applyTitleCase(`Généré le ${new Date().toLocaleString('fr-FR')} • Total: ${filteredCourriers.length} courrier(s)`, exportSettings.headerTitleCase);
       const titleRows: any[][] = [[titleText]];

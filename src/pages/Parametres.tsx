@@ -61,6 +61,7 @@ import GestionTypesEntites from './admin/GestionTypesEntites';
 import GestionFormulaireCourrier from './admin/GestionFormulaireCourrier';
 import MigrationFirebase from './admin/MigrationFirebase';
 import GestionParametresExport from './admin/GestionParametresExport';
+import GestionParametresGeneraux from './admin/GestionParametresGeneraux';
 import GestionScanners from './admin/GestionScanners';
 import GestionSignaturesTampons from './admin/GestionSignaturesTampons';
 import GestionCachetAccuse from './admin/GestionCachetAccuse';
@@ -250,6 +251,7 @@ type TabId =
   | 'migration-firebase'
   | 'sync-firestore-laravel'
   | 'parametres-export'
+  | 'parametres-generaux'
   | 'import-fichiers'
   | 'scanners'
   | 'signatures-tampons'
@@ -629,14 +631,24 @@ const Parametres: React.FC = () => {
       borderColor: 'border-emerald-200'
     },
     {
-      id: 'parametres-export' as const, 
-      label: 'Paramètres d\'Export', 
-      icon: faFileExport, 
+      id: 'parametres-export' as const,
+      label: 'Paramètres d\'Export',
+      icon: faFileExport,
       description: 'Configuration des exports',
       gradient: 'from-rose-500 to-pink-600',
       bgLight: 'bg-rose-50',
       textColor: 'text-rose-600',
       borderColor: 'border-rose-200'
+    },
+    {
+      id: 'parametres-generaux' as const,
+      label: 'Paramètres généraux',
+      icon: faGear,
+      description: 'Configuration globale de l\'application',
+      gradient: 'from-slate-500 to-gray-600',
+      bgLight: 'bg-slate-50',
+      textColor: 'text-slate-600',
+      borderColor: 'border-slate-200'
     },
     {
       id: 'import-fichiers' as const,
@@ -1130,6 +1142,7 @@ const Parametres: React.FC = () => {
             </div>
           )}
           {activeTab === 'parametres-export' && <GestionParametresExport />}
+          {activeTab === 'parametres-generaux' && <GestionParametresGeneraux />}
           {activeTab === 'import-fichiers' && <ParametresImportFichiers />}
           {activeTab === 'scanners' && <GestionScanners />}
           {activeTab === 'signatures-tampons' && <GestionSignaturesTampons />}
