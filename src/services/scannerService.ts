@@ -497,6 +497,8 @@ class ScannerService {
     orientation?: ScanOrientation;
     /** Taille de l'image dans le document : fill-width | fill-height | fill-page | fit */
     imageScaleMode?: ScanImageScaleMode;
+    /** Mode de scan : une page ou plusieurs pages fusionnées */
+    scanType?: ScanType;
     compress?: boolean;
     compressionLimitKb?: number;
     /** Signal pour annuler le scan (AbortController.signal) */
@@ -549,7 +551,8 @@ class ScannerService {
           scanSource: options.scanSource || 'vitre',
           pageSize: options.pageSize || 'A4',
           orientation: options.orientation || 'auto',
-          imageScaleMode: options.imageScaleMode || 'fill-page'
+          imageScaleMode: options.imageScaleMode || 'fill-page',
+          scanType: options.scanType || 'single'
         }),
       });
 

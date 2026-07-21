@@ -509,6 +509,7 @@ const EnregistrerCourrierListe: React.FC = () => {
         pageSize: scanSettings.pageSize ?? 'A4',
         orientation: scanSettings.orientation ?? 'auto',
         imageScaleMode: scanSettings.imageScaleMode ?? 'fill-page',
+        scanType: scanSettings.scanType ?? 'single',
         compress: scanSettings.compress ?? false,
         compressionLimitKb: (scanSettings.compressionLimitKb != null && scanSettings.compressionLimitKb > 0) ? scanSettings.compressionLimitKb : 500,
         signal: controller.signal,
