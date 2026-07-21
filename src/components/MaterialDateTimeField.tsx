@@ -30,9 +30,23 @@ type Props = {
 
 function toDayjs(value: string | Date | null | undefined): Dayjs | null {
   if (!value) return null;
-  if (value instanceof Date) return dayjs(value);
-  const d = dayjs(value);
-  return d.isValid() ? d : null;
+  if (value instanceof Date) {
+    // Traiter la date comme une heure "murale" locale : utiliser les composantes UTC
+    // comme composantes locales pour éviter les décalages de fuseau horaire.
+    const y = value.getUTCFullYear();
+    const m = value.getUTCMonth() + 1;
+    const d = value.getUTCDate();
+    const h = value.getUTCHours();
+    const min = value.getUTCMinutes();
+    return dayjs(`${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`);
+  }
+  if (typeof value === 'string') {
+    // Supprimer l'indicateur UTC/offset pour interpréter la valeur en heure locale murale.
+    const localValue = value.replace(/\.\d{0,3}Z$/, '').replace(/Z$/, '').replace(/([+-]\d{2}):?(\d{2})$/, '');
+    const d = dayjs(localValue);
+    return d.isValid() ? d : null;
+  }
+  return null;
 }
 
 function toHtmlLocalString(value: Dayjs | null): string {
