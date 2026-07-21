@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
+import OtpInput from '../components/OtpInput';
 import { useAuth } from '../context/AuthContext';
 import { userService } from '../services/userService';
 import { laravelApiService } from '../services/laravelApiService';
@@ -258,7 +259,7 @@ const Profil: React.FC = () => {
           {user?.twoFactorEnabled ? <button type="button" onClick={disableTwoFactor} className="mt-4 rounded-xl border border-red-300 px-4 py-3 font-semibold text-red-700">Désactiver</button> : !twoFactorUri ? <button type="button" onClick={beginTwoFactor} className="mt-4 rounded-xl bg-primary-600 px-4 py-3 font-semibold text-white">Configurer</button> : <form onSubmit={confirmTwoFactor} className="mt-4 space-y-3">
             {twoFactorQr && <img src={twoFactorQr} alt="QR code de configuration TOTP" className="mx-auto h-[220px] w-[220px]" />}
             <p className="break-all text-xs text-surface-500">{twoFactorUri}</p>
-            <input required inputMode="numeric" maxLength={6} value={twoFactorCode} onChange={e => setTwoFactorCode(e.target.value)} placeholder="Code à 6 chiffres" className="w-full rounded-xl border-2 border-surface-200 px-4 py-3 text-center tracking-[0.3em]" />
+            <OtpInput value={twoFactorCode} onChange={setTwoFactorCode} />
             <button className="rounded-xl bg-primary-600 px-4 py-3 font-semibold text-white">Activer</button>
           </form>}
           {recoveryCodes.length > 0 && <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900"><strong>Conservez ces codes dans un lieu sûr :</strong><div className="mt-2 grid grid-cols-2 gap-2 font-mono">{recoveryCodes.map(code => <span key={code}>{code}</span>)}</div></div>}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import OtpInput from '../components/OtpInput';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faEnvelope, 
@@ -332,7 +333,7 @@ const Login: React.FC = () => {
             <form onSubmit={handleTwoFactorSubmit} className="space-y-5">
               <div>
                 <label htmlFor="two-factor-code" className="block text-sm font-semibold text-surface-700 mb-2">Code de sécurité</label>
-                <input id="two-factor-code" inputMode="numeric" autoComplete="one-time-code" maxLength={32} value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} required autoFocus className="w-full px-4 py-3.5 bg-white border-2 border-surface-200 rounded-xl focus:ring-0 focus:border-primary-500 text-center tracking-[0.35em] text-lg" placeholder="000000" />
+                <OtpInput value={twoFactorCode} onChange={setTwoFactorCode} disabled={loading} />
                 <p className="mt-2 text-sm text-surface-500">Saisissez le code de votre application ou un code de récupération.</p>
               </div>
               <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-primary-500 to-primary-600 text-white py-4 rounded-xl font-semibold disabled:opacity-70">{loading ? 'Vérification…' : 'Vérifier et se connecter'}</button>
