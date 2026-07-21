@@ -361,6 +361,34 @@ class LaravelApiService {
     return await res.json();
   }
 
+  /** GET /api/config/{key} — lecture d'une config générique */
+  async getConfig<T>(key: string): Promise<T | null> {
+    if (!this.baseUrl) return null;
+    const res = await fetch(`${this.baseUrl}/api/config/${encodeURIComponent(key)}`, {
+      method: 'GET',
+      headers: buildHeaders(),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.data ?? null;
+  }
+
+  /** PUT /api/config/{key} — mise à jour d'une config générique */
+  async updateConfig<T>(key: string, value: T): Promise<T | null> {
+    if (!this.baseUrl) throw new Error('API Laravel non configurée (VITE_LARAVEL_API_URL)');
+    const res = await fetch(`${this.baseUrl}/api/config/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: buildHeaders(),
+      body: JSON.stringify({ data: value }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(extractValidationError(text, res.status));
+    }
+    const data = await res.json();
+    return data?.data ?? null;
+  }
+
   /** GET /api/courriers — filtres optionnels envoyés au serveur pour réduire le volume de données */
   async getCourriers(
     userId?: string,

@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Auth;
  */
 class ConfigController extends Controller
 {
-    private const ALLOWED_KEYS = ['formulaire', 'export', 'scanners', 'scanner_backend_url', 'archive3d', 'courrier_fichier', 'cachet_accuse'];
+    private const ALLOWED_KEYS = ['formulaire', 'export', 'scanners', 'scanner_backend_url', 'archive3d', 'courrier_fichier', 'cachet_accuse', 'general'];
 
     /**
      * GET /api/config/{key}
@@ -88,6 +88,14 @@ class ConfigController extends Controller
                 'hauteur' => 100,
                 'bordureDouble' => true,
                 'afficherQR' => false,
+            ],
+            'general' => [
+                'companyName' => '',
+                'defaultPageOrientation' => 'portrait',
+                'timezone' => 'Europe/Paris',
+                'timeFormat' => '24h',
+                'dateFormat' => 'DD/MM/YYYY',
+                'language' => 'fr',
             ],
             default => null,
         };

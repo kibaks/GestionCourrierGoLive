@@ -61,7 +61,7 @@ class ExportSettingsService {
     }
     
     // Paramètres par défaut (peuvent être surchargés par les paramètres généraux)
-    const general = generalSettingsService.getSettings();
+    const general = generalSettingsService.getSettingsSync();
     return {
       format: 'A4',
       orientation: general.defaultPageOrientation || 'landscape',
@@ -127,7 +127,7 @@ class ExportSettingsService {
    * les paramètres généraux, sinon un libellé par défaut.
    */
   getHeaderTitle(explicitTitle?: string, fallback = 'Fiche d\'enregistrement'): string {
-    const general = generalSettingsService.getSettings();
+    const general = generalSettingsService.getSettingsSync();
     return (explicitTitle || '').trim() || general.companyName.trim() || fallback;
   }
 

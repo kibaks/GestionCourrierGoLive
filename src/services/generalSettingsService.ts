@@ -1,7 +1,11 @@
 /**
  * Paramètres généraux de l'application.
- * Stockés dans localStorage.
+ * Priorité de persistance :
+ * 1) API Laravel (config/clé general) quand VITE_LARAVEL_API_URL est configurée
+ * 2) localStorage en fallback / hors ligne
  */
+
+import { laravelApiService } from './laravelApiService';
 
 export type PageOrientation = 'portrait' | 'landscape';
 export type TimeFormat = '24h' | '12h';
@@ -33,34 +37,71 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
 };
 
 const STORAGE_KEY = 'general_settings';
+const CONFIG_KEY = 'general';
 
 class GeneralSettingsService {
   private settingsKey = STORAGE_KEY;
 
-  getSettings(): GeneralSettings {
-    const saved = localStorage.getItem(this.settingsKey);
-    if (saved) {
+  /**
+   * Charge les paramètres : API Laravel d'abord, sinon localStorage.
+   */
+  async getSettings(): Promise<GeneralSettings> {
+    const defaults = { ...DEFAULT_GENERAL_SETTINGS };
+
+    if (laravelApiService.isConfigured()) {
       try {
-        const parsed = JSON.parse(saved);
-        return { ...DEFAULT_GENERAL_SETTINGS, ...parsed };
+        const remote = await laravelApiService.getConfig<Partial<GeneralSettings>>(CONFIG_KEY);
+        if (remote && typeof remote === 'object') {
+          const merged = { ...defaults, ...remote };
+          this.saveToLocalStorage(merged);
+          return merged;
+        }
       } catch (e) {
-        console.error('Erreur lors du chargement des paramètres généraux:', e);
+        console.warn('[GeneralSettings] Impossible de charger depuis Laravel, fallback localStorage:', e);
       }
     }
-    return { ...DEFAULT_GENERAL_SETTINGS };
+
+    return this.getLocalSettings();
   }
 
-  saveSettings(settings: GeneralSettings): void {
-    try {
-      localStorage.setItem(this.settingsKey, JSON.stringify(settings));
-    } catch (e) {
-      console.error('Erreur lors de la sauvegarde des paramètres généraux:', e);
+  /**
+   * Version synchrone : retourne immédiatement depuis localStorage.
+   * À utiliser dans les contextes ne pouvant pas attendre (exports, formatage…).
+   */
+  getSettingsSync(): GeneralSettings {
+    return this.getLocalSettings();
+  }
+
+  /**
+   * Sauvegarde les paramètres : API Laravel si configurée, plus localStorage en cache.
+   */
+  async saveSettings(settings: GeneralSettings): Promise<void> {
+    const cleaned: GeneralSettings = {
+      companyName: settings.companyName || '',
+      defaultPageOrientation: settings.defaultPageOrientation || DEFAULT_GENERAL_SETTINGS.defaultPageOrientation,
+      timezone: settings.timezone || DEFAULT_GENERAL_SETTINGS.timezone,
+      timeFormat: settings.timeFormat || DEFAULT_GENERAL_SETTINGS.timeFormat,
+      dateFormat: settings.dateFormat || DEFAULT_GENERAL_SETTINGS.dateFormat,
+      language: settings.language || DEFAULT_GENERAL_SETTINGS.language,
+    };
+
+    this.saveToLocalStorage(cleaned);
+
+    if (laravelApiService.isConfigured()) {
+      try {
+        await laravelApiService.updateConfig(CONFIG_KEY, cleaned);
+      } catch (e) {
+        console.warn('[GeneralSettings] Sauvegarde Laravel échouée, conservée en localStorage:', e);
+      }
     }
   }
 
-  resetToDefaults(): GeneralSettings {
+  /**
+   * Réinitialise aux valeurs par défaut.
+   */
+  async resetToDefaults(): Promise<GeneralSettings> {
     const defaults = { ...DEFAULT_GENERAL_SETTINGS };
-    this.saveSettings(defaults);
+    await this.saveSettings(defaults);
     return defaults;
   }
 
@@ -72,7 +113,7 @@ class GeneralSettingsService {
     const date = value instanceof Date ? value : new Date(value);
     if (isNaN(date.getTime())) return '';
 
-    const settings = this.getSettings();
+    const settings = this.getSettingsSync();
     const locale = settings.language === 'fr' ? 'fr-FR' : 'en-US';
 
     const dateOptions: Intl.DateTimeFormatOptions = {
@@ -107,6 +148,26 @@ class GeneralSettingsService {
     const timeStr = date.toLocaleTimeString(locale, timeOptions);
 
     return `${dateStr} ${timeStr}`;
+  }
+
+  private getLocalSettings(): GeneralSettings {
+    try {
+      const data = localStorage.getItem(this.settingsKey);
+      if (!data) return { ...DEFAULT_GENERAL_SETTINGS };
+      const parsed = JSON.parse(data);
+      return { ...DEFAULT_GENERAL_SETTINGS, ...parsed };
+    } catch (e) {
+      console.error('Erreur lors du chargement des paramètres généraux:', e);
+      return { ...DEFAULT_GENERAL_SETTINGS };
+    }
+  }
+
+  private saveToLocalStorage(settings: GeneralSettings): void {
+    try {
+      localStorage.setItem(this.settingsKey, JSON.stringify(settings));
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde des paramètres généraux:', error);
+    }
   }
 }
 

@@ -42,29 +42,70 @@ const COMMON_TIMEZONES = [
 const GestionParametresGeneraux: React.FC = () => {
   const [settings, setSettings] = useState<GeneralSettings>(DEFAULT_GENERAL_SETTINGS);
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setSettings(generalSettingsService.getSettings());
+    let cancelled = false;
+    setLoading(true);
+    generalSettingsService
+      .getSettings()
+      .then((s) => {
+        if (!cancelled) setSettings(s);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Erreur de chargement');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const updateSetting = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleSave = () => {
-    generalSettingsService.saveSettings(settings);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await generalSettingsService.saveSettings(settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur lors de l\'enregistrement');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleReset = () => {
-    if (window.confirm('Réinitialiser les paramètres généraux aux valeurs par défaut ?')) {
-      const defaults = generalSettingsService.resetToDefaults();
+  const handleReset = async () => {
+    if (!window.confirm('Réinitialiser les paramètres généraux aux valeurs par défaut ?')) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const defaults = await generalSettingsService.resetToDefaults();
       setSettings(defaults);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur lors de la réinitialisation');
+    } finally {
+      setSaving(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <p className="text-sm text-gray-500">Chargement des paramètres…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -78,17 +119,19 @@ const GestionParametresGeneraux: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={handleReset}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium"
+            disabled={saving}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium disabled:opacity-60"
           >
             <FontAwesomeIcon icon={faUndo} />
             Réinitialiser
           </button>
           <button
             onClick={handleSave}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+            disabled={saving}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-60"
           >
             <FontAwesomeIcon icon={faSave} />
-            Enregistrer
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </div>
       </div>
@@ -97,6 +140,12 @@ const GestionParametresGeneraux: React.FC = () => {
         <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
           <FontAwesomeIcon icon={faCheckCircle} className="text-green-600" />
           <span className="text-green-800 font-medium">Paramètres enregistrés avec succès !</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800">
+          {error}
         </div>
       )}
 
@@ -244,7 +293,7 @@ const GestionParametresGeneraux: React.FC = () => {
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
         <p className="text-xs text-gray-500">
           <FontAwesomeIcon icon={faGlobe} className="mr-1" />
-          Les paramètres sont enregistrés localement dans ce navigateur. Ils s'appliquent immédiatement après sauvegarde.
+          Les paramètres sont enregistrés sur le serveur Laravel en ligne et copiés en cache local. Ils s'appliquent immédiatement après sauvegarde.
         </p>
       </div>
     </div>
