@@ -96,6 +96,23 @@ class ConfigController extends Controller
                 'timeFormat' => '24h',
                 'dateFormat' => 'DD/MM/YYYY',
                 'language' => 'fr',
+                'mail' => [
+                    'enabled' => false,
+                    'driver' => 'smtp',
+                    'host' => 'smtp.example.com',
+                    'port' => 587,
+                    'username' => '',
+                    'password' => '',
+                    'encryption' => 'tls',
+                    'fromAddress' => '',
+                    'fromName' => '',
+                ],
+                'sms' => [
+                    'provider' => 'none',
+                    'sid' => '',
+                    'token' => '',
+                    'from' => '',
+                ],
             ],
             default => null,
         };

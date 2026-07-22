@@ -3,6 +3,8 @@ import {
   generalSettingsService,
   DEFAULT_GENERAL_SETTINGS,
   GeneralSettings,
+  MailSettings,
+  SmsSettings,
   PageOrientation,
   TimeFormat,
   DateFormat,
@@ -19,6 +21,8 @@ import {
   faGlobe,
   faCalendarAlt,
   faLanguage,
+  faEnvelope,
+  faCommentSms,
 } from '@fortawesome/free-solid-svg-icons';
 
 const COMMON_TIMEZONES = [
@@ -67,6 +71,14 @@ const GestionParametresGeneraux: React.FC = () => {
 
   const updateSetting = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateMail = <K extends keyof MailSettings>(key: K, value: MailSettings[K]) => {
+    setSettings((prev) => ({ ...prev, mail: { ...prev.mail, [key]: value } }));
+  };
+
+  const updateSms = <K extends keyof SmsSettings>(key: K, value: SmsSettings[K]) => {
+    setSettings((prev) => ({ ...prev, sms: { ...prev.sms, [key]: value } }));
   };
 
   const handleSave = async () => {
@@ -158,6 +170,7 @@ const GestionParametresGeneraux: React.FC = () => {
               <li>L'entête des exports PDF, Excel et image</li>
               <li>L'orientation par défaut des documents</li>
               <li>L'affichage des dates et heures dans l'application</li>
+              <li>Le serveur d'envoi d'e-mails et le serveur SMS</li>
             </ul>
           </div>
         </div>
@@ -286,6 +299,168 @@ const GestionParametresGeneraux: React.FC = () => {
                 <option value="en">English</option>
               </select>
             </div>
+          </div>
+        </div>
+
+        {/* Serveur d'envoi d'e-mails */}
+        <div className="space-y-4 lg:col-span-2">
+          <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-2">
+            <FontAwesomeIcon icon={faEnvelope} className="text-gray-400" />
+            Serveur d'envoi d'e-mails (SMTP)
+          </h4>
+          <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <input
+                id="mail-enabled"
+                type="checkbox"
+                checked={settings.mail.enabled}
+                onChange={(e) => updateMail('enabled', e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="mail-enabled" className="text-sm font-medium text-gray-700">Activer l'envoi d'e-mails</label>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Serveur SMTP</label>
+                <input
+                  type="text"
+                  value={settings.mail.host}
+                  onChange={(e) => updateMail('host', e.target.value)}
+                  placeholder="smtp.example.com"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Port</label>
+                <input
+                  type="number"
+                  value={settings.mail.port}
+                  onChange={(e) => updateMail('port', parseInt(e.target.value || '0', 10))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Chiffrement</label>
+                <select
+                  value={settings.mail.encryption}
+                  onChange={(e) => updateMail('encryption', e.target.value as MailSettings['encryption'])}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="tls">TLS</option>
+                  <option value="ssl">SSL</option>
+                  <option value="">Aucun</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Driver</label>
+                <select
+                  value={settings.mail.driver}
+                  onChange={(e) => updateMail('driver', e.target.value as MailSettings['driver'])}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="smtp">SMTP</option>
+                  <option value="sendmail">Sendmail</option>
+                  <option value="log">Log (tests)</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Nom d'utilisateur SMTP</label>
+                <input
+                  type="text"
+                  value={settings.mail.username}
+                  onChange={(e) => updateMail('username', e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Mot de passe SMTP</label>
+                <input
+                  type="password"
+                  value={settings.mail.password}
+                  onChange={(e) => updateMail('password', e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Adresse d'envoi</label>
+                <input
+                  type="email"
+                  value={settings.mail.fromAddress}
+                  onChange={(e) => updateMail('fromAddress', e.target.value)}
+                  placeholder="noreply@example.com"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Nom d'affichage</label>
+                <input
+                  type="text"
+                  value={settings.mail.fromName}
+                  onChange={(e) => updateMail('fromName', e.target.value)}
+                  placeholder="Gestion Courriers"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Serveur d'envoi de SMS */}
+        <div className="space-y-4 lg:col-span-2">
+          <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-2">
+            <FontAwesomeIcon icon={faCommentSms} className="text-gray-400" />
+            Serveur d'envoi de SMS
+          </h4>
+          <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fournisseur SMS</label>
+              <select
+                value={settings.sms.provider}
+                onChange={(e) => updateSms('provider', e.target.value as SmsSettings['provider'])}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="none">Désactivé</option>
+                <option value="twilio">Twilio</option>
+              </select>
+            </div>
+            {settings.sms.provider === 'twilio' && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Account SID</label>
+                  <input
+                    type="text"
+                    value={settings.sms.sid}
+                    onChange={(e) => updateSms('sid', e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Auth Token</label>
+                  <input
+                    type="password"
+                    value={settings.sms.token}
+                    onChange={(e) => updateSms('token', e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Numéro d'envoi</label>
+                  <input
+                    type="text"
+                    value={settings.sms.from}
+                    onChange={(e) => updateSms('from', e.target.value)}
+                    placeholder="+1234567890"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

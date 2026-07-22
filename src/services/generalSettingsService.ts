@@ -12,6 +12,25 @@ export type TimeFormat = '24h' | '12h';
 export type DateFormat = 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
 export type AppLanguage = 'fr' | 'en';
 
+export interface MailSettings {
+  enabled: boolean;
+  driver: 'smtp' | 'sendmail' | 'log';
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  encryption: 'tls' | 'ssl' | '';
+  fromAddress: string;
+  fromName: string;
+}
+
+export interface SmsSettings {
+  provider: 'twilio' | 'none';
+  sid: string;
+  token: string;
+  from: string;
+}
+
 export interface GeneralSettings {
   /** Nom de l'entreprise / organisation */
   companyName: string;
@@ -25,7 +44,30 @@ export interface GeneralSettings {
   dateFormat: DateFormat;
   /** Langue de l'interface */
   language: AppLanguage;
+  /** Configuration du serveur d'envoi d'e-mails */
+  mail: MailSettings;
+  /** Configuration du serveur d'envoi de SMS */
+  sms: SmsSettings;
 }
+
+const defaultMailSettings: MailSettings = {
+  enabled: false,
+  driver: 'smtp',
+  host: 'smtp.example.com',
+  port: 587,
+  username: '',
+  password: '',
+  encryption: 'tls',
+  fromAddress: '',
+  fromName: '',
+};
+
+const defaultSmsSettings: SmsSettings = {
+  provider: 'none',
+  sid: '',
+  token: '',
+  from: '',
+};
 
 export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   companyName: '',
@@ -34,6 +76,8 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   timeFormat: '24h',
   dateFormat: 'DD/MM/YYYY',
   language: 'fr',
+  mail: defaultMailSettings,
+  sms: defaultSmsSettings,
 };
 
 const STORAGE_KEY = 'general_settings';
@@ -83,6 +127,8 @@ class GeneralSettingsService {
       timeFormat: settings.timeFormat || DEFAULT_GENERAL_SETTINGS.timeFormat,
       dateFormat: settings.dateFormat || DEFAULT_GENERAL_SETTINGS.dateFormat,
       language: settings.language || DEFAULT_GENERAL_SETTINGS.language,
+      mail: { ...defaultMailSettings, ...settings.mail },
+      sms: { ...defaultSmsSettings, ...settings.sms },
     };
 
     this.saveToLocalStorage(cleaned);
