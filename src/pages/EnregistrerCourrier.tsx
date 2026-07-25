@@ -670,9 +670,9 @@ const EnregistrerCourrier: React.FC = () => {
                 id: 'dateReception',
                 name: 'dateReception',
                 label: 'Date de Réception',
-                type: 'date',
+                type: 'datetime',
                 required: true,
-                placeholder: 'Sélectionnez la date de réception du courrier'
+                placeholder: 'Sélectionnez la date et l\'heure de réception du courrier'
               },
               {
                 id: 'objet',
@@ -1259,37 +1259,30 @@ const EnregistrerCourrier: React.FC = () => {
         }
       }
 
-      // Uploader les nouveaux fichiers en ARRIÈRE-PLAN (non-bloquant)
-      // Le courrier est déjà sauvegardé — l'upload ne doit pas ralentir ni bloquer la navigation
+      // Uploader les nouveaux fichiers de manière bloquante pour garantir qu'ils soient liés au courrier
+      // avant d'afficher le message de succès et de naviguer
       if (laravelApiService.isConfigured() && selectedFiles.length > 0) {
         const validation = optimizedUploadService.validateFiles(selectedFiles, 100);
         if (!validation.valid) {
           showAlert(validation.error!, 'warning');
           // On continue quand même — le courrier est déjà créé
         } else {
-          const uploadCreePar = user?.id || 'system';
-          const uploadCourrierIdCopy = courrierId;
-          const uploadFilesCopy = [...selectedFiles];
-          // Délai 15s : laisse Phase1+Phase2+Phase0 se terminer avant que PHP traite l'upload
-          setTimeout(() => {
-            optimizedUploadService.uploadFiles(uploadCourrierIdCopy, uploadFilesCopy, {
+          try {
+            const results = await optimizedUploadService.uploadFiles(courrierId, [...selectedFiles], {
               maxConcurrent: 1,       // séquentiel — évite la saturation PHP
               maxRetries: 1,          // 1 seul retry — pas de spam serveur
               timeout: 45000,         // 45s par fichier (php artisan serve mono-thread)
               compressImages: true,
               enableHeartbeat: false, // inutile avec keepalive:true
-              creePar: uploadCreePar,
-            }).then(results => {
-              const failCount = results.filter(r => !r.success).length;
-              if (failCount > 0) {
-                console.warn(`⚠️ ${failCount} fichier(s) non uploadé(s) pour ${uploadCourrierIdCopy}. Réessayez depuis la page détail.`);
-              } else {
-                console.log(`✅ ${results.length} fichier(s) uploadé(s) en arrière-plan pour ${uploadCourrierIdCopy}`);
-              }
-            }).catch(err => {
-              console.error('❌ Erreur upload arrière-plan:', err);
+              creePar: user?.id || 'system',
             });
-          }, 3000);
+            const failCount = results.filter(r => !r.success).length;
+            if (failCount > 0) {
+              showAlert(`${failCount} fichier(s) n'ont pas pu être enregistrés avec le courrier.`, 'warning');
+            }
+          } catch (uploadErr: any) {
+            showAlert(uploadErr?.message || "Erreur lors de l'enregistrement des fichiers", 'warning');
+          }
         }
       }
       

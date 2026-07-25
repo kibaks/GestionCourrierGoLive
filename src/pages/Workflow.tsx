@@ -2547,6 +2547,13 @@ const Workflow: React.FC = () => {
                     {assignedUser.role && <span className="text-neutral-400">({assignedUser.role})</span>}
                   </div>
                 )}
+
+                {etape.commentaire && (
+                  <div
+                    className="text-xs text-neutral-500 mt-1 line-clamp-2"
+                    dangerouslySetInnerHTML={{ __html: etape.commentaire }}
+                  />
+                )}
                 
                 <div className="flex flex-wrap gap-3 text-xs text-neutral-500">
                   {etape.dureeEstimee && (
@@ -2977,7 +2984,7 @@ const Workflow: React.FC = () => {
             )}
 
             {/* Contenu principal */}
-            <div ref={containerRef} className={`flex-1 flex overflow-hidden relative ${selectedEtape ? 'pr-[400px]' : ''}`}>
+            <div ref={containerRef} className="flex-1 flex overflow-hidden relative w-full">
               {viewMode === 'visual' ? (
                 // Vue visuelle
                 <div
@@ -3165,7 +3172,10 @@ const Workflow: React.FC = () => {
                     {selectedEtape.commentaire && (
                       <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                         <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1 block">Commentaire</label>
-                        <p className="text-neutral-600 text-sm italic">"{selectedEtape.commentaire}"</p>
+                        <div
+                          className="text-neutral-600 text-sm italic"
+                          dangerouslySetInnerHTML={{ __html: selectedEtape.commentaire }}
+                        />
                       </div>
                     )}
                     
@@ -3208,7 +3218,10 @@ const Workflow: React.FC = () => {
                                     Décision : {r.decision.replace('_', ' ')}
                                   </div>
                                 )}
-                                <p className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap">{r.message}</p>
+                                <div
+                                  className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap"
+                                  dangerouslySetInnerHTML={{ __html: r.message }}
+                                />
                               </div>
                             );
                           })}
@@ -3258,7 +3271,10 @@ const Workflow: React.FC = () => {
                                   </span>
                                 </div>
                                 <p className="text-xs font-semibold text-neutral-600 mt-1">{author?.nom ?? ann.auteur}</p>
-                                <div className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap">{ann.contenu}</div>
+                                <div
+                                  className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap"
+                                  dangerouslySetInnerHTML={{ __html: ann.contenu }}
+                                />
                               </div>
                             );
                           })}

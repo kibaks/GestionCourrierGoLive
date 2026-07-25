@@ -47,7 +47,7 @@ class Courrier extends Model
     ];
 
     protected $casts = [
-        'date_reception' => 'date',
+        'date_reception' => 'datetime',
         'date_enregistrement' => 'datetime',
         'extra_fields' => 'array',
     ];

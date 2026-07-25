@@ -1488,17 +1488,17 @@ minute: '2-digit'
       {/* État du stockage — jauge circulaire et répartition */}
       {storageInfo && (
         <div className="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-xl shadow-slate-200/40">
-          <div className="px-6 py-5 bg-gradient-to-r from-blue-600 to-blue-700 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+          <div className="px-4 sm:px-6 py-5 bg-gradient-to-r from-blue-600 to-blue-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <div className="w-12 h-12 rounded-xl bg-white/15 flex items-center justify-center">
                 <FontAwesomeIcon icon={faDatabase} className="w-6 h-6 text-white" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-lg font-bold text-white tracking-tight">État du stockage</h2>
-                <p className="text-sm text-blue-100 mt-0.5">Espace utilisé et répartition par type</p>
+                <p className="text-sm text-blue-100 mt-0.5 leading-snug">Espace utilisé et répartition par type</p>
               </div>
             </div>
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold ${
+            <div className={`self-start sm:self-auto flex flex-none items-center gap-2 whitespace-nowrap px-4 py-2 rounded-xl text-sm font-bold ${
               storageInfo.usagePercent < 70 
                 ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30' 
                 : storageInfo.usagePercent < 90 
@@ -1514,10 +1514,10 @@ minute: '2-digit'
             </div>
           </div>
 
-          <div className="p-6">
-            <div className="flex flex-col lg:flex-row gap-8 items-start">
+          <div className="p-4 sm:p-6">
+            <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-center lg:items-start">
               {/* Jauge circulaire */}
-              <div className="flex-shrink-0 flex flex-col items-center">
+              <div className="w-full lg:w-auto flex-shrink-0 flex flex-col items-center">
                 <div className="relative w-44 h-44">
                   <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
                     <circle cx="50" cy="50" r="42" fill="none" stroke="rgb(241 245 249)" strokeWidth="10" />
@@ -1575,7 +1575,7 @@ minute: '2-digit'
 
                 {storageInfo.items.length > 0 ? (
                   <>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
                       {storageInfo.items.slice(0, 5).map((item, index) => {
                         const pct = storageInfo.usedSize > 0 ? (item.size / storageInfo.usedSize) * 100 : 0;
                         const icon = item.extension === 'pdf' ? faFilePdf : item.extension === 'doc' || item.extension === 'docx' ? faFileWord : item.extension === 'xls' || item.extension === 'xlsx' ? faFileExcel : item.extension.match(/jpg|jpeg|png|gif/) ? faFileImage : item.extension.match(/zip|rar|7z/) ? faFileArchive : faFileAlt;
@@ -1583,7 +1583,7 @@ minute: '2-digit'
                         return (
                           <div
                             key={`${item.extension}-${index}`}
-                            className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm"
+                            className="min-w-0 p-3 sm:p-4 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm"
                           >
                             <div className="flex items-center gap-2 mb-2">
                               <FontAwesomeIcon icon={icon} className={`w-4 h-4 flex-shrink-0 ${iconColor}`} />
@@ -1666,10 +1666,10 @@ minute: '2-digit'
                               {topItems.map((item, idx) => {
                                 const pct = totalFileCount > 0 ? Math.round((item.count / totalFileCount) * 100) : 0;
                                 return (
-                                  <div key={`chart-legend-${item.extension}-${idx}`} className="flex items-center gap-2">
+                                  <div key={`chart-legend-${item.extension}-${idx}`} className="flex min-w-0 items-center gap-2">
                                     <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: FILE_PALETTE[idx % FILE_PALETTE.length] }} />
-                                    <span className="text-xs font-semibold text-slate-700 truncate flex-1">{item.type} <span className="text-slate-400 font-normal uppercase">.{item.extension}</span></span>
-                                    <span className="text-xs font-bold text-slate-900 tabular-nums">{item.count} <span className="text-slate-400 font-normal">({pct}%)</span></span>
+                                    <span className="min-w-0 text-xs font-semibold text-slate-700 truncate flex-1">{item.type} <span className="text-slate-400 font-normal uppercase">.{item.extension}</span></span>
+                                    <span className="flex-none whitespace-nowrap text-xs font-bold text-slate-900 tabular-nums">{item.count} <span className="text-slate-400 font-normal">({pct}%)</span></span>
                                   </div>
                                 );
                               })}

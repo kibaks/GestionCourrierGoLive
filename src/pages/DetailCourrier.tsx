@@ -8,7 +8,7 @@ import { directionService } from '../services/directionService';
 import { entiteOrganisationnelleService } from '../services/entiteOrganisationnelleService';
 import { entiteTypeService } from '../services/entiteTypeService';
 import { adminService } from '../services/adminService';
-import { Courrier, Assignation, WorkflowEtape, WorkflowDecision, Role, Priorite, Utilisateur, CategorieFichier, TypeCourrier, SensCourrier, TypeEntiteOrganisationnelle, Annotation, StatutCourrier } from '../types';
+import { Courrier, Assignation, WorkflowEtape, WorkflowDecision, WorkflowResponse, Role, Priorite, Utilisateur, CategorieFichier, TypeCourrier, SensCourrier, TypeEntiteOrganisationnelle, Annotation, StatutCourrier } from '../types';
 import { categorieFichierService } from '../services/categorieFichierService';
 import { laravelApiService } from '../services/laravelApiService';
 import { formulaireCourrierService, FormStructure } from '../services/formulaireCourrierService';
@@ -553,6 +553,8 @@ const DetailCourrier: React.FC = () => {
   const handleSubmitRetour = async () => {
     if (!retourEtape || !retourMessage.trim() || !user) return;
     setRetourSubmitting(true);
+
+    let updatedEtape = retourEtape;
     try {
       await laravelApiService.addWorkflowResponse(retourEtape.id, {
         message: retourMessage.trim(),
@@ -562,31 +564,67 @@ const DetailCourrier: React.FC = () => {
       });
 
       // Recharger l'étape pour avoir les responses à jour
-      const refreshed = await (courrierService as any).getWorkflowsByCourrierAsync?.(id);
-      const updatedEtapes: WorkflowEtape[] = Array.isArray(refreshed) ? refreshed : workflows;
-      setWorkflows(updatedEtapes);
-      const updatedEtape = updatedEtapes.find(e => e.id === retourEtape.id) ?? retourEtape;
-      setRetourEtape(updatedEtape);
+      let refreshedEtapes: WorkflowEtape[] | undefined;
+      try {
+        refreshedEtapes = await (courrierService as any).getWorkflowsByCourrierAsync?.(id);
+      } catch {
+        refreshedEtapes = undefined;
+      }
 
-      const isCreator = String(retourEtape.creePar) === String(user.id);
-      const superiorId = getSuperiorId(user.id, String(retourEtape.creePar));
-      const courrierNum = courrier?.numero ?? retourEtape.courrierId;
-      const etapeLabel = retourEtape.etape;
+      // Fallback local si le rechargement est indisponible : injecter la réponse dans l'étape courante
+      const localResponse: WorkflowResponse = {
+        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
+          ? (crypto as any).randomUUID()
+          : `${Date.now()}`,
+        auteurId: user.id,
+        auteurNom: user.nom,
+        message: retourMessage.trim(),
+        decision: retourDecision as WorkflowDecision | undefined,
+        createdAt: new Date().toISOString() as unknown as Date,
+      };
+      const fallbackEtape: WorkflowEtape = {
+        ...retourEtape,
+        responses: [...(retourEtape.responses || []), localResponse],
+      };
+
+      const updatedEtapes: WorkflowEtape[] = Array.isArray(refreshedEtapes)
+        ? refreshedEtapes
+        : workflows.map(e => (e.id === retourEtape.id ? fallbackEtape : e));
+      setWorkflows(updatedEtapes);
+      const foundEtape = updatedEtapes.find(e => e.id === retourEtape.id) ?? fallbackEtape;
+      updatedEtape = foundEtape;
+      setRetourEtape(foundEtape);
+
+      showAlert('Réponse enregistrée avec succès', 'success');
+    } catch (e) {
+      console.error('Erreur lors de la création de la réponse:', e);
+      showAlert('Erreur lors de la soumission du retour', 'error');
+      setRetourSubmitting(false);
+      return;
+    }
+
+    // Traitements post-création (terminer l'étape, notifier, vérifier statut traité)
+    // isolés pour éviter qu'une erreur secondaire ne masque la réussite de la réponse
+    try {
+      const isCreator = String(updatedEtape.creePar) === String(user.id);
+      const superiorId = getSuperiorId(user.id, String(updatedEtape.creePar));
+      const courrierNum = courrier?.numero ?? updatedEtape.courrierId;
+      const etapeLabel = updatedEtape.etape;
 
       if (isCreator && retourDecision === 'AVIS_FAVORABLE') {
         // ── Créateur valide : terminer l'étape + notifier l'assigné ─────
-        await courrierService.updateWorkflowEtapeAsync(retourEtape.id, { statut: 'TERMINE', dateFin: new Date() });
+        await courrierService.updateWorkflowEtapeAsync(updatedEtape.id, { statut: 'TERMINE', dateFin: new Date() });
         await checkAndMarkCourrierTraite();
         // Notifier l'assigné de la validation
         notificationService.createNotification({
-          userId: retourEtape.assigneA,
+          userId: updatedEtape.assigneA,
           type: 'workflow',
           title: '✅ Étape validée',
           message: `Votre retour sur "${etapeLabel}" (${courrierNum}) a été validé — étape terminée.`,
-          relatedId: retourEtape.courrierId,
+          relatedId: updatedEtape.courrierId,
           relatedType: 'courrier',
           priority: 'normal',
-          actionUrl: `/courriers/${retourEtape.courrierId}`,
+          actionUrl: `/courriers/${updatedEtape.courrierId}`,
         }).catch(() => {});
         showAlert('Étape validée et marquée comme terminée', 'success');
         setRetourEtape(null);
@@ -594,26 +632,26 @@ const DetailCourrier: React.FC = () => {
       } else if (retourDecision === 'A_REVOIR') {
         // ── À revoir : notifier l'assigné de corriger + rappel 48h ──────
         notificationService.createNotification({
-          userId: retourEtape.assigneA,
+          userId: updatedEtape.assigneA,
           type: 'workflow',
           title: '↩ Retour à corriger',
           message: `Votre retour sur "${etapeLabel}" (${courrierNum}) doit être revu. Message : ${retourMessage.trim().slice(0, 120)}${retourMessage.trim().length > 120 ? '…' : ''}`,
-          relatedId: retourEtape.courrierId,
+          relatedId: updatedEtape.courrierId,
           relatedType: 'courrier',
           priority: 'high',
-          actionUrl: `/courriers/${retourEtape.courrierId}`,
+          actionUrl: `/courriers/${updatedEtape.courrierId}`,
         }).catch(() => {});
         // Rappel automatique après 48h si toujours pas de correction
         const rappel48h = new Date(Date.now() + 48 * 60 * 60 * 1000);
         notificationService.createNotification({
-          userId: retourEtape.assigneA,
+          userId: updatedEtape.assigneA,
           type: 'rappel',
           title: '⏰ Rappel : retour en attente',
           message: `Rappel : votre retour sur "${etapeLabel}" (${courrierNum}) est en attente de correction depuis 48h.`,
-          relatedId: retourEtape.courrierId,
+          relatedId: updatedEtape.courrierId,
           relatedType: 'courrier',
           priority: 'high',
-          actionUrl: `/courriers/${retourEtape.courrierId}`,
+          actionUrl: `/courriers/${updatedEtape.courrierId}`,
           metadata: { scheduledAt: rappel48h.toISOString(), type: 'rappel_retour' },
         }).catch(() => {});
         showAlert('Retour enregistré — l\'assigné sera notifié et relancé si nécessaire', 'success');
@@ -621,7 +659,7 @@ const DetailCourrier: React.FC = () => {
       } else {
         // ── Retour soumis par l'assigné : si AVIS_FAVORABLE, terminer l'étape ──────
         if (retourDecision === 'AVIS_FAVORABLE') {
-          await courrierService.updateWorkflowEtapeAsync(retourEtape.id, { statut: 'TERMINE', dateFin: new Date() });
+          await courrierService.updateWorkflowEtapeAsync(updatedEtape.id, { statut: 'TERMINE', dateFin: new Date() });
         }
         // Notifier supérieur + rappel 24h si pas de validation
         if (superiorId && superiorId !== user.id) {
@@ -630,10 +668,10 @@ const DetailCourrier: React.FC = () => {
             type: 'workflow',
             title: '📋 Retour en attente de validation',
             message: `${user.nom} a soumis son retour sur "${etapeLabel}" (${courrierNum}). Veuillez valider ou demander une correction.`,
-            relatedId: retourEtape.courrierId,
+            relatedId: updatedEtape.courrierId,
             relatedType: 'courrier',
             priority: 'normal',
-            actionUrl: `/courriers/${retourEtape.courrierId}`,
+            actionUrl: `/courriers/${updatedEtape.courrierId}`,
           }).catch(() => {});
           // Rappel automatique au supérieur après 24h si pas de validation
           const rappel24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -642,10 +680,10 @@ const DetailCourrier: React.FC = () => {
             type: 'rappel',
             title: '⏰ Rappel : retour en attente de validation',
             message: `Rappel : le retour de ${user.nom} sur "${etapeLabel}" (${courrierNum}) attend votre validation depuis 24h.`,
-            relatedId: retourEtape.courrierId,
+            relatedId: updatedEtape.courrierId,
             relatedType: 'courrier',
             priority: 'high',
-            actionUrl: `/courriers/${retourEtape.courrierId}`,
+            actionUrl: `/courriers/${updatedEtape.courrierId}`,
             metadata: { scheduledAt: rappel24h.toISOString(), type: 'rappel_validation' },
           }).catch(() => {});
         }
@@ -655,10 +693,10 @@ const DetailCourrier: React.FC = () => {
           type: 'workflow',
           title: '📤 Retour soumis',
           message: `Votre retour sur "${etapeLabel}" (${courrierNum}) a été soumis. Votre supérieur sera relancé si nécessaire.`,
-          relatedId: retourEtape.courrierId,
+          relatedId: updatedEtape.courrierId,
           relatedType: 'courrier',
           priority: 'low',
-          actionUrl: `/courriers/${retourEtape.courrierId}`,
+          actionUrl: `/courriers/${updatedEtape.courrierId}`,
         }).catch(() => {});
         showAlert('Retour soumis — votre supérieur sera notifié et relancé si nécessaire', 'success');
       }
@@ -669,8 +707,9 @@ const DetailCourrier: React.FC = () => {
       setRetourMessage('');
       setRetourDecision(undefined);
       setRetourFichier(null);
-    } catch (e) {
-      showAlert('Erreur lors de la soumission du retour', 'error');
+    } catch (postErr: any) {
+      console.error('Erreur post-création de la réponse:', postErr);
+      showAlert('Réponse enregistrée, mais une erreur est survenue lors du traitement ultérieur.', 'warning');
     } finally {
       setRetourSubmitting(false);
     }
@@ -1067,12 +1106,13 @@ const DetailCourrier: React.FC = () => {
 
       // ── 1. Enregistrement ──────────────────────────────────────────────────
       const createdByUser = userService.getUserById((courrier as any).createdBy || (courrier as any).creePar);
+      const contenuHtml = (courrier as any).contenuCourrier || '';
       timeline.push({
         id: 'enregistrement-courrier',
         type: 'enregistrement',
         date: (courrier as any).dateCreation || new Date(),
         title: 'Enregistrement',
-        description: `Courrier ${courrier.numero} enregistré`,
+        description: contenuHtml || `Courrier ${courrier.numero} enregistré`,
         status: 'TERMINE',
         user: createdByUser,
       });
@@ -3841,11 +3881,16 @@ const DetailCourrier: React.FC = () => {
                               {isDone ? 'Terminé' : task.status === 'EN_COURS' ? 'En cours' : task.status === 'REJETE' ? 'Rejeté' : 'En attente'}
                             </span>
                             <span className="text-[11px] text-slate-400 whitespace-nowrap">
-                              {new Date(task.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                              {new Date(task.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
                         </div>
-                        {task.description && <p className="text-xs text-slate-500 mt-1 line-clamp-1">{task.description}</p>}
+                        {task.description && (
+                          <div
+                            className="text-xs text-slate-500 mt-1 line-clamp-1 prose-sm"
+                            dangerouslySetInnerHTML={{ __html: task.description }}
+                          />
+                        )}
                       </div>
                     </div>
                   );
