@@ -77,7 +77,7 @@ ChartJS.register(
 const centerTextDoughnutPlugin = {
   id: 'centerTextDoughnut' as const,
   afterDraw(chart: any) {
-    if (chart.config.type !== 'pie' || !chart.chartArea) return;
+    if (chart.config.type !== 'pie' || !chart.chartArea || !chart.options.plugins?.centerTextDoughnut?.enabled) return;
     const ds = chart.data.datasets?.[0];
     if (!ds?.data?.length) return;
     const total = (ds.data as number[]).reduce((a: number, b: number) => a + b, 0);
@@ -1061,6 +1061,7 @@ minute: '2-digit'
       duration: 1200
     },
     plugins: {
+      centerTextDoughnut: { enabled: true },
       legend: { display: false },
       tooltip: {
         backgroundColor: 'rgba(15, 23, 42, 0.95)',
