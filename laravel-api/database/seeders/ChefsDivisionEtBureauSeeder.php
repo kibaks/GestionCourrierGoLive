@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /**
@@ -87,6 +88,8 @@ class ChefsDivisionEtBureauSeeder extends Seeder
             ]);
             $created++;
         }
+
+        Cache::forget('users_all');
 
         $this->command->info("Chefs de division/bureau : {$created} créé(s), {$updated} mis à jour. Mot de passe temporaire : " . self::DEFAULT_PASSWORD);
     }
