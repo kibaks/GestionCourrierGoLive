@@ -46,20 +46,20 @@ class CourrierFolderController extends Controller
                             $q2->where('visibility', 'dg')->whereNull('direction');
                         });
                     }
-                    if (($user->isDirecteur() || ($user->isSecretaire() && $user->direction)) && $user->direction) {
+                    if (($user->isDirecteur() || $user->isChefDivision() || ($user->isSecretaire() && $user->direction)) && $user->direction) {
                         // 3. Niveau Direction : dossiers de SA direction uniquement
                         $q->orWhere(function ($q2) use ($user) {
                             $q2->where('visibility', 'direction')
                                ->where('direction', $user->direction);
                         });
                     }
-                    if ($user->isChefService() && $user->service) {
+                    if (($user->isChefService() || $user->isChefBureau()) && $user->service) {
                         // 4. Niveau Service : dossiers de SON service uniquement
                         $q->orWhere(function ($q2) use ($user) {
                             $q2->where('visibility', 'service')
                                ->where('service', $user->service);
                         });
-                        // Un chef de service voit aussi les dossiers de sa direction
+                        // Un chef de service/bureau voit aussi les dossiers de sa direction
                         if ($user->direction) {
                             $q->orWhere(function ($q2) use ($user) {
                                 $q2->where('visibility', 'direction')
@@ -122,9 +122,9 @@ class CourrierFolderController extends Controller
         if (!$visibility) {
             if ($user->isSuperAdmin() || $user->isDirecteurGeneral() || ($user->isSecretaire() && !$user->direction)) {
                 $visibility = 'dg';
-            } elseif ($user->isDirecteur() || ($user->isSecretaire() && $user->direction)) {
+            } elseif ($user->isDirecteur() || $user->isChefDivision() || ($user->isSecretaire() && $user->direction)) {
                 $visibility = 'direction';
-            } elseif ($user->isChefService()) {
+            } elseif ($user->isChefService() || $user->isChefBureau()) {
                 $visibility = 'service';
             } else {
                 $visibility = 'private';

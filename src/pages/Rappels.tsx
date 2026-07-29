@@ -106,6 +106,8 @@ const Rappels: React.FC = () => {
     Role.SUPER_ADMIN,
     Role.DIRECTEUR_GENERAL,
     Role.DIRECTEUR,
+    Role.CHEF_DIVISION,
+    Role.CHEF_BUREAU,
     Role.CHEF_SERVICE,
     Role.SECRETAIRE
   ].includes(user.role);
@@ -139,6 +141,8 @@ const Rappels: React.FC = () => {
         }
         case Role.DIRECTEUR_GENERAL:
         case Role.DIRECTEUR:
+        case Role.CHEF_DIVISION:
+        case Role.CHEF_BUREAU:
         case Role.CHEF_SERVICE:
           try {
             const annotations = await courrierService.getAnnotationsByCourrier(courrierId);

@@ -13,8 +13,8 @@ use Illuminate\Database\Eloquent\Builder;
  * SECRETAIRE sans direction : tous les courriers.
  * SECRETAIRE avec direction : courriers de sa direction + assignés + enregistrés par lui.
  * DIRECTEUR_GENERAL : uniquement les courriers qui lui sont orientés (assignés).
- * DIRECTEUR : courriers de sa direction + assignés + enregistrés par lui.
- * CHEF_SERVICE, AGENT : courriers de son service + direction, ou assignés.
+ * DIRECTEUR / CHEF_DIVISION : courriers de leur direction + assignés + enregistrés par eux.
+ * CHEF_SERVICE, CHEF_BUREAU, AGENT : courriers de leur service + direction, ou assignés.
  */
 class CourrierAccessService
 {
@@ -51,8 +51,8 @@ class CourrierAccessService
             return $query;
         }
 
-        // DIRECTEUR : courriers orientés (assignés) + courriers qu'il a enregistrés + courriers de sa direction
-        if ($user->isDirecteur()) {
+        // DIRECTEUR / CHEF_DIVISION : courriers orientés (assignés) + courriers enregistrés + courriers de leur direction
+        if ($user->isDirecteur() || $user->isChefDivision()) {
             $assigneAIds = Assignation::where('assigne_a', $user->id)->pluck('courrier_id')->toArray();
             $query->where(function (Builder $q) use ($user, $assigneAIds) {
                 $q->whereIn('id', $assigneAIds)
@@ -70,7 +70,7 @@ class CourrierAccessService
             $q->whereIn('id', $assigneAIds)
               ->orWhere('enregistre_par', $user->id);
 
-            if (($user->isChefService() || $user->isAgent()) && $user->service && $user->direction) {
+            if (($user->isChefService() || $user->isChefBureau() || $user->isAgent()) && $user->service && $user->direction) {
                 $q->orWhere(function (Builder $q2) use ($user) {
                     $q2->where('service', $user->service)->where('direction', $user->direction);
                 });
@@ -102,8 +102,8 @@ class CourrierAccessService
             return false;
         }
 
-        // DIRECTEUR : courriers de sa direction
-        if ($user->isDirecteur()) {
+        // DIRECTEUR / CHEF_DIVISION : courriers de leur direction
+        if ($user->isDirecteur() || $user->isChefDivision()) {
             return $user->direction && $courrier->direction === $user->direction;
         }
 
@@ -112,7 +112,7 @@ class CourrierAccessService
             return !$user->direction || $courrier->direction === $user->direction;
         }
 
-        if (($user->isChefService() || $user->isAgent()) && $user->service && $user->direction
+        if (($user->isChefService() || $user->isChefBureau() || $user->isAgent()) && $user->service && $user->direction
             && $courrier->service === $user->service && $courrier->direction === $user->direction) {
             return true;
         }

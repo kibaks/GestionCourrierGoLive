@@ -191,7 +191,9 @@ class UserService {
       SUPER_ADMIN: allUsersInDb.filter(u => u.role === Role.SUPER_ADMIN).length,
       DIRECTEUR_GENERAL: allUsersInDb.filter(u => u.role === Role.DIRECTEUR_GENERAL).length,
       DIRECTEUR: allUsersInDb.filter(u => u.role === Role.DIRECTEUR).length,
+      CHEF_DIVISION: allUsersInDb.filter(u => u.role === Role.CHEF_DIVISION).length,
       CHEF_SERVICE: allUsersInDb.filter(u => u.role === Role.CHEF_SERVICE).length,
+      CHEF_BUREAU: allUsersInDb.filter(u => u.role === Role.CHEF_BUREAU).length,
       AGENT: allUsersInDb.filter(u => u.role === Role.AGENT).length,
       SECRETAIRE: allUsersInDb.filter(u => u.role === Role.SECRETAIRE).length
     });
@@ -262,6 +264,23 @@ class UserService {
       return allDirectionUsers;
     }
 
+    // 3b. CHEF_DIVISION : voit tous les employés de sa direction + les pairs CHEF_DIVISION
+    if (currentUser.role === Role.CHEF_DIVISION && currentUser.direction) {
+      const directionUsers = allUsersInDb.filter((u: Utilisateur) =>
+        u.direction === currentUser.direction
+      );
+      const sameLevelUsers = allUsersInDb.filter((u: Utilisateur) =>
+        u.role === Role.CHEF_DIVISION &&
+        u.direction === currentUser.direction &&
+        u.id !== userId
+      );
+      const allDirectionUsers = Array.from(
+        new Map([...directionUsers, ...sameLevelUsers].map((u: Utilisateur) => [u.id, u])).values()
+      );
+      console.log(`✅ CHEF_DIVISION (${currentUser.direction}) - Employés de la direction:`, allDirectionUsers.length);
+      return allDirectionUsers;
+    }
+
     // 4. CHEF_SERVICE : voit tous les employés de son service (CHEF_SERVICE, AGENT)
     // + tous les CHEF_SERVICE de son service (pairs au même niveau)
     if (currentUser.role === Role.CHEF_SERVICE && currentUser.service && currentUser.direction) {
@@ -286,6 +305,25 @@ class UserService {
       if (allServiceUsers.length === 0) {
         console.warn('⚠️ Aucun utilisateur trouvé pour le service:', currentUser.service, 'dans la direction:', currentUser.direction);
       }
+      return allServiceUsers;
+    }
+
+    // 4b. CHEF_BUREAU : voit tous les employés de son service + les pairs CHEF_BUREAU
+    if (currentUser.role === Role.CHEF_BUREAU && currentUser.service && currentUser.direction) {
+      const serviceUsers = allUsersInDb.filter((u: Utilisateur) =>
+        u.service === currentUser.service &&
+        u.direction === currentUser.direction
+      );
+      const sameLevelUsers = allUsersInDb.filter((u: Utilisateur) =>
+        u.role === Role.CHEF_BUREAU &&
+        u.service === currentUser.service &&
+        u.direction === currentUser.direction &&
+        u.id !== userId
+      );
+      const allServiceUsers = Array.from(
+        new Map([...serviceUsers, ...sameLevelUsers].map((u: Utilisateur) => [u.id, u])).values()
+      );
+      console.log(`✅ CHEF_BUREAU (${currentUser.service}) - Employés du service:`, allServiceUsers.length);
       return allServiceUsers;
     }
 

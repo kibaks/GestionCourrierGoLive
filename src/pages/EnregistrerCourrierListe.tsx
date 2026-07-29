@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import dayjs from 'dayjs';
@@ -18,6 +18,7 @@ import { entiteTypeService } from '../services/entiteTypeService';
 import { scannerService, checkScannerBackendHealth, Scanner, DEFAULT_SCAN_SETTINGS, type ScanSettings, type ScanFormat, type ScanPageSize } from '../services/scannerService';
 import { userSettingsService } from '../services/userSettingsService';
 import { TypeCourrier, Priorite, SensCourrier, CategorieCourrier, Role, EntiteOrganisationnelle, StatutCourrier, Courrier } from '../types';
+import { isRestrictedOrganisationManager, getOrganisationEntity, getAllowedRecipientIds } from '../utils/courrierOrganisationRules';
 import { MaterialDateTimeField } from '../components/MaterialDateTimeField';
 import MaterialInput from '../components/MaterialInput';
 import CustomDialog, { DialogOptions } from '../components/CustomDialog';
@@ -110,6 +111,15 @@ const EnregistrerCourrierListe: React.FC = () => {
     const userDirection = user?.direction || '';
     const isSecDG = user?.role === Role.SECRETAIRE && isDirectionGenerale(userDirection);
     const fallbackEntity = userDirection || 'Direction Générale';
+
+    // Rôles responsables d'unité : uniquement courrier interne sortant vers descendants ou DG
+    if (user && isRestrictedOrganisationManager(user)) {
+      defaults.sens = SensCourrier.SORTANT;
+      defaults.type = TypeCourrier.INTERNE;
+      defaults.expediteur = userEntity?.nom || userDirection || 'Direction Générale';
+      defaults.destinataire = '';
+      return defaults;
+    }
 
     // Pour les courriers externes, les deux champs (expéditeur et destinataire) sont requis côté API.
     // Le champ visible est celui que l'utilisateur remplit ; l'autre champ est pré-rempli automatiquement.
@@ -235,7 +245,15 @@ const EnregistrerCourrierListe: React.FC = () => {
   const [formConfig, setFormConfig] = useState<ExtraFieldsBySensAndType | null>(null);
   const [extraColumns, setExtraColumns] = useState<ExtraFieldConfig[]>([]);
 
-  const allowed = user && [Role.SECRETAIRE, Role.SUPER_ADMIN, Role.DIRECTEUR_GENERAL].includes(user.role);
+  const allowed = user && [Role.SECRETAIRE, Role.SUPER_ADMIN, Role.DIRECTEUR_GENERAL, Role.DIRECTEUR, Role.CHEF_DIVISION, Role.CHEF_BUREAU].includes(user.role);
+
+  // Rôles responsables d'unité : création restreinte aux courriers internes sortants vers leurs descendants ou la DG
+  const isRestrictedRole = user ? isRestrictedOrganisationManager(user) : false;
+  const userEntity = useMemo(() => getOrganisationEntity(user, entities), [user, entities]);
+  const allowedRecipientIds = useMemo(() =>
+    getAllowedRecipientIds(user, entities),
+    [user, entities]
+  );
 
   // Champs structurels gérés par des colonnes fixes dédiées — ne pas les dupliquer
   const FIXED_FIELDS = new Set(['sens', 'type', 'direction', 'service', 'sousService', 'priorite', 'folderId']);
@@ -342,6 +360,14 @@ const EnregistrerCourrierListe: React.FC = () => {
       };
     }));
   }, [activeSens, activeType]);
+
+  // Pour les responsables d'unité, forcer la création en interne sortant
+  useEffect(() => {
+    if (isRestrictedRole) {
+      setActiveSens(SensCourrier.SORTANT);
+      setActiveType(TypeCourrier.INTERNE);
+    }
+  }, [isRestrictedRole]);
 
   const upd = useCallback((id: string, f: keyof RowData, v: string) => {
     setRows(p => p.map(r => r.id !== id ? r : { ...r, [f]: v, ...(f === 'direction' ? { service: '' } : {}) }));
@@ -617,6 +643,14 @@ const EnregistrerCourrierListe: React.FC = () => {
     return '';
   };
 
+  const getSelectedEntityIdFromCascade = (cascade: Record<string, string>): string | null => {
+    for (let i = filterLevels.length - 1; i >= 0; i--) {
+      const id = cascade[filterLevels[i].code];
+      if (id) return id;
+    }
+    return null;
+  };
+
   // ── Helpers catégories ─────────────────────────────
   const toggleFolderExpand = (folderId: string) => {
     setExpandedFolderIds(prev => {
@@ -832,6 +866,15 @@ const EnregistrerCourrierListe: React.FC = () => {
       if (status[r.id] === 'saved') continue;
       const e = validate(r, extraColumns); newErr[r.id] = e;
       if (Object.keys(e).length) hasErr = true;
+
+      // Validation spécifique aux responsables d'unité
+      if (isRestrictedOrganisationManager(user) && r.type === TypeCourrier.INTERNE && r.sens === SensCourrier.SORTANT) {
+        const destId = getSelectedEntityIdFromCascade(r.entiteDestinataire);
+        if (!destId || !allowedRecipientIds.has(destId)) {
+          newErr[r.id] = { ...newErr[r.id], destinataire: 'Destinataire non autorisé (descendants ou DG uniquement)' };
+          hasErr = true;
+        }
+      }
     }
     setErrors(newErr);
     if (hasErr) {
@@ -840,7 +883,7 @@ const EnregistrerCourrierListe: React.FC = () => {
         options: {
           type: 'warning',
           title: 'Champs requis manquants',
-          message: 'Certains champs obligatoires sont vides. Vérifiez les lignes marquées en rouge.',
+          message: 'Certains champs obligatoires sont vides ou le destinataire n\'est pas autorisé. Vérifiez les lignes marquées en rouge.',
           confirmText: 'OK',
           onConfirm: () => setDialog({ isOpen: false, options: { message: '' } }),
         }
@@ -881,11 +924,13 @@ const EnregistrerCourrierListe: React.FC = () => {
           : urgenceVal >= 5 ? Priorite.URGENTE
           : Priorite.NORMALE;
         const isInternal = r.type === TypeCourrier.INTERNE;
-        const extraFieldsCopy: Record<string, string> = { ...(r.referenceExterne ? { referenceExterne: r.referenceExterne } : {}), ...r.extraFields };
+        const extraFieldsCopy: Record<string, string | Record<string, string>> = { ...(r.referenceExterne ? { referenceExterne: r.referenceExterne } : {}), ...r.extraFields };
         if (isInternal) {
           delete (extraFieldsCopy as any)['numero'];
           delete (extraFieldsCopy as any)['Numero'];
           delete (extraFieldsCopy as any)['NUMERO'];
+          extraFieldsCopy.entiteDestinataireJson = r.entiteDestinataire;
+          extraFieldsCopy.entiteEmetteurJson = r.entiteEmetteur;
         }
         const data: Omit<Courrier, 'id' | 'numero' | 'dateEnregistrement' | 'createdAt' | 'updatedAt'> & { numero?: string } = {
           type: r.type, sens: r.sens, dateReception: r.dateReception,
@@ -1705,28 +1750,35 @@ const EnregistrerCourrierListe: React.FC = () => {
           <span className="text-xs font-bold text-surface-400 uppercase tracking-widest">Type</span>
           <div className="flex items-center bg-surface-100 rounded-xl p-0.5">
             {Object.values(SensCourrier).map(s => (
-              <button key={s} onClick={() => setActiveSens(s)}
+              <button key={s} onClick={() => !isRestrictedRole && setActiveSens(s)}
+                disabled={isRestrictedRole}
                 className={`px-3 py-1.5 rounded-[10px] text-xs font-bold transition-all ${
                   activeSens === s
                     ? 'bg-white shadow text-blue-600 border border-surface-200'
                     : 'text-surface-500 hover:text-surface-700'
-                }`}>
+                } ${isRestrictedRole ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 {s === SensCourrier.ENTRANT ? '↓ Entrant' : '↑ Sortant'}
               </button>
             ))}
           </div>
           <div className="flex items-center bg-surface-100 rounded-xl p-0.5">
             {Object.values(TypeCourrier).map(t => (
-              <button key={t} onClick={() => setActiveType(t)}
+              <button key={t} onClick={() => !isRestrictedRole && setActiveType(t)}
+                disabled={isRestrictedRole}
                 className={`px-3 py-1.5 rounded-[10px] text-xs font-bold transition-all ${
                   activeType === t
                     ? 'bg-white shadow text-indigo-600 border border-surface-200'
                     : 'text-surface-500 hover:text-surface-700'
-                }`}>
+                } ${isRestrictedRole ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 {t === TypeCourrier.INTERNE ? 'Interne' : 'Externe'}
               </button>
             ))}
           </div>
+          {isRestrictedRole && (
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+              Vous ne pouvez créer que des courriers internes sortants
+            </span>
+          )}
           <div className="h-4 w-px bg-surface-200 hidden sm:block" />
           {!formConfig && (
             <span className="inline-flex items-center gap-1.5 text-xs text-surface-400">

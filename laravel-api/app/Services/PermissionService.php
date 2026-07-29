@@ -48,8 +48,8 @@ class PermissionService
             $permissions = $this->getDefaultPermissionsForRole($roleCode);
         }
 
-        // Secrétaire et Directeur : toujours avoir VOIR_DEPARTEMENTS pour l'organigramme et les formulaires
-        if (in_array($roleCode, ['SECRETAIRE', 'DIRECTEUR'], true) && !in_array(Permission::VOIR_DEPARTEMENTS, $permissions, true)) {
+        // Responsables organisationnels : accès à l’organigramme et aux formulaires
+        if (in_array($roleCode, ['SECRETAIRE', 'DIRECTEUR', 'CHEF_DIVISION', 'CHEF_BUREAU'], true) && !in_array(Permission::VOIR_DEPARTEMENTS, $permissions, true)) {
             $permissions[] = Permission::VOIR_DEPARTEMENTS;
         }
 
@@ -116,6 +116,16 @@ class PermissionService
                 Permission::FILTRER_PAR_DIRECTION,
                 Permission::FILTRER_PAR_SERVICE,
             ],
+            'CHEF_DIVISION' => [
+                Permission::VOIR_COURRIERS,
+                Permission::CREER_COURRIER,
+                Permission::MODIFIER_COURRIER,
+                Permission::ASSIGNER_COURRIER,
+                Permission::VOIR_UTILISATEURS,
+                Permission::VOIR_DEPARTEMENTS,
+                Permission::FILTRER_PAR_SERVICE,
+                Permission::FILTRER_PAR_SOUS_SERVICE,
+            ],
             'CHEF_SERVICE' => [
                 Permission::VOIR_COURRIERS,
                 Permission::MODIFIER_COURRIER,
@@ -123,6 +133,15 @@ class PermissionService
                 Permission::VOIR_UTILISATEURS,
                 Permission::VOIR_DEPARTEMENTS, // Ajouté pour l'organigramme
                 Permission::FILTRER_PAR_SERVICE,
+                Permission::FILTRER_PAR_SOUS_SERVICE,
+            ],
+            'CHEF_BUREAU' => [
+                Permission::VOIR_COURRIERS,
+                Permission::CREER_COURRIER,
+                Permission::MODIFIER_COURRIER,
+                Permission::ASSIGNER_COURRIER,
+                Permission::VOIR_UTILISATEURS,
+                Permission::VOIR_DEPARTEMENTS,
                 Permission::FILTRER_PAR_SOUS_SERVICE,
             ],
             'AGENT' => [

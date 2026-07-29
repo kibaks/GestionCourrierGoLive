@@ -83,7 +83,7 @@ class AuthController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => ['required', 'confirmed', Password::defaults()],
-            'role' => 'nullable|in:SUPER_ADMIN,DIRECTEUR_GENERAL,SECRETAIRE,DIRECTEUR,CHEF_SERVICE,AGENT',
+            'role' => 'nullable|in:SUPER_ADMIN,DIRECTEUR_GENERAL,SECRETAIRE,DIRECTEUR,CHEF_DIVISION,CHEF_SERVICE,CHEF_BUREAU,AGENT',
             'direction' => 'nullable|string|max:255',
             'service' => 'nullable|string|max:255',
         ]);

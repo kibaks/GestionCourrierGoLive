@@ -128,7 +128,7 @@ const Planning: React.FC = () => {
       let filtered = activities;
       if (user) {
         const isSuper = hasRole(Role.SUPER_ADMIN) || hasRole(Role.DIRECTEUR_GENERAL) || hasRole(Role.SECRETAIRE);
-        const isOrgManager = hasRole(Role.DIRECTEUR) || hasRole(Role.CHEF_SERVICE);
+        const isOrgManager = hasRole(Role.DIRECTEUR) || hasRole(Role.CHEF_DIVISION) || hasRole(Role.CHEF_BUREAU) || hasRole(Role.CHEF_SERVICE);
 
         if (!isSuper) {
           if (isOrgManager) {

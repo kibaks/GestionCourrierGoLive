@@ -10,7 +10,7 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
 
 /**
  * Utilisateur avec rôles et permissions (aligné Firebase / Firestore).
- * Rôles : SUPER_ADMIN, DIRECTEUR_GENERAL, SECRETAIRE, DIRECTEUR, CHEF_SERVICE, AGENT.
+ * Rôles : SUPER_ADMIN, DIRECTEUR_GENERAL, SECRETAIRE, DIRECTEUR, CHEF_DIVISION, CHEF_SERVICE, CHEF_BUREAU, AGENT.
  */
 class User extends Authenticatable implements JWTSubject
 {
@@ -103,9 +103,19 @@ class User extends Authenticatable implements JWTSubject
         return $this->role === 'DIRECTEUR';
     }
 
+    public function isChefDivision(): bool
+    {
+        return $this->role === 'CHEF_DIVISION';
+    }
+
     public function isChefService(): bool
     {
         return $this->role === 'CHEF_SERVICE';
+    }
+
+    public function isChefBureau(): bool
+    {
+        return $this->role === 'CHEF_BUREAU';
     }
 
     public function isAgent(): bool

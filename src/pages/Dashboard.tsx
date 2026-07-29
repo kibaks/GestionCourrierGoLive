@@ -21,7 +21,7 @@ import {
   LineElement,
   Filler
 } from 'chart.js';
-import { Pie, Bar, Line } from 'react-chartjs-2';
+import { Doughnut, Bar, Line } from 'react-chartjs-2';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faDatabase, 
@@ -77,7 +77,7 @@ ChartJS.register(
 const centerTextDoughnutPlugin = {
   id: 'centerTextDoughnut' as const,
   afterDraw(chart: any) {
-    if (chart.config.type !== 'pie' || !chart.chartArea || !chart.options.plugins?.centerTextDoughnut?.enabled) return;
+    if (chart.config.type !== 'doughnut' || !chart.chartArea || !chart.options.plugins?.centerTextDoughnut?.enabled) return;
     const ds = chart.data.datasets?.[0];
     if (!ds?.data?.length) return;
     const total = (ds.data as number[]).reduce((a: number, b: number) => a + b, 0);
@@ -1452,7 +1452,7 @@ minute: '2-digit'
           {stats.total > 0 ? (
             <div className="flex items-center gap-8">
               <div className="w-52 h-52 flex-shrink-0">
-                <Pie data={pieData} options={pieOptions} />
+                <Doughnut data={pieData} options={pieOptions} />
               </div>
               <div className="flex-1 space-y-4 min-w-0">
                 {[
@@ -1657,7 +1657,7 @@ minute: '2-digit'
                           <p className="text-sm font-semibold text-slate-600 mb-4">Graphique par type de fichier</p>
                           <div className="flex flex-col sm:flex-row items-center gap-6">
                             <div className="relative w-44 h-44 flex-shrink-0">
-                              <Pie data={fileTypeChartData} options={fileTypeChartOptions} />
+                              <Doughnut data={fileTypeChartData} options={fileTypeChartOptions} />
                               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                                 <span className="text-2xl font-extrabold text-slate-800 tabular-nums">{totalFileCount}</span>
                                 <span className="text-[11px] font-medium text-slate-500 mt-0.5">fichiers</span>

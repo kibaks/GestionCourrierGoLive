@@ -245,7 +245,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }
   }, [pathname, search]);
 
-  const canEnregistrer = hasRole(Role.SECRETAIRE) || hasRole(Role.DIRECTEUR_GENERAL) || hasRole(Role.SUPER_ADMIN);
+  const canEnregistrer = hasRole(Role.SECRETAIRE) || hasRole(Role.DIRECTEUR_GENERAL) || hasRole(Role.SUPER_ADMIN) || hasRole(Role.DIRECTEUR) || hasRole(Role.CHEF_DIVISION) || hasRole(Role.CHEF_BUREAU);
 
   // Détermine si le secrétaire connecté est celui de la Direction Générale (accès aux archives)
   const isSecretaireDG = useMemo(() => {

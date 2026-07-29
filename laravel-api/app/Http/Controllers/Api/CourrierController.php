@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Courrier;
+use App\Models\EntiteOrganisationnelle;
+use App\Models\User;
 use App\Services\CourrierAccessService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
@@ -136,6 +138,10 @@ class CourrierController extends Controller
             'extraFields' => 'nullable|array',
         ]);
 
+        if (($restrictionError = $this->validateOrganisationManagerPayload($user, $validated)) !== null) {
+            return $restrictionError;
+        }
+
         $dateEnregistrement = isset($validated['dateEnregistrement'])
             ? $validated['dateEnregistrement']
             : now();
@@ -243,6 +249,11 @@ class CourrierController extends Controller
         ]);
 
         $items = $validated['courriers'];
+        foreach ($items as $item) {
+            if (($restrictionError = $this->validateOrganisationManagerPayload($user, $item)) !== null) {
+                return $restrictionError;
+            }
+        }
         $maxBulk = 100;
         if (count($items) > $maxBulk) {
             return response()->json([
@@ -364,6 +375,15 @@ class CourrierController extends Controller
                 'fichier' => 'nullable|string',
                 'extraFields' => 'nullable|array',
             ]);
+            $candidate = array_merge([
+                'type' => $courrier->type,
+                'sens' => $courrier->sens,
+                'destinataire' => $courrier->destinataire,
+                'extraFields' => $courrier->extra_fields,
+            ], $validated);
+            if (($restrictionError = $this->validateOrganisationManagerPayload($user, $candidate)) !== null) {
+                return $restrictionError;
+            }
             try {
                 $courrier->update($this->mapToSnakeCase($validated));
             } catch (QueryException $e) {
@@ -413,6 +433,14 @@ class CourrierController extends Controller
         $service = isset($input['service']) && trim((string) $input['service']) !== '' ? trim((string) $input['service']) : null;
         $fichier = isset($input['fichier']) && trim((string) $input['fichier']) !== '' ? trim((string) $input['fichier']) : null;
         $extraFields = isset($input['extraFields']) && is_array($input['extraFields']) ? $input['extraFields'] : null;
+        if (($restrictionError = $this->validateOrganisationManagerPayload($user, [
+            'type' => $type,
+            'sens' => $sens,
+            'destinataire' => $destinataire,
+            'extraFields' => $extraFields,
+        ])) !== null) {
+            return $restrictionError;
+        }
 
         try {
             $courrier = Courrier::create([
@@ -557,6 +585,34 @@ class CourrierController extends Controller
             $sequence = (int) $m[1] + 1;
         }
         return sprintf('%s-%d-%04d', $prefix, $annee, $sequence);
+    }
+
+    private function validateOrganisationManagerPayload(User $user, array $payload): ?JsonResponse
+    {
+        if (!in_array($user->role, ['DIRECTEUR', 'CHEF_DIVISION', 'CHEF_BUREAU'], true)) return null;
+        if (($payload['type'] ?? null) !== 'INTERNE' || ($payload['sens'] ?? null) !== 'SORTANT') {
+            return response()->json(['message' => 'Les responsables d’unités peuvent uniquement adresser des courriers internes sortants.'], 403);
+        }
+        $sender = $user->entite_id
+            ? EntiteOrganisationnelle::where('id', $user->entite_id)->where('actif', true)->first()
+            : EntiteOrganisationnelle::where('type', 'direction')->where('nom', $user->direction)->where('actif', true)->first();
+        $cascade = $payload['extraFields']['entiteDestinataireJson'] ?? null;
+        if (is_string($cascade)) $cascade = json_decode($cascade, true);
+        $recipientId = is_array($cascade) ? end($cascade) : null;
+        $recipient = $recipientId
+            ? EntiteOrganisationnelle::where('id', $recipientId)->where('actif', true)->first()
+            : EntiteOrganisationnelle::where('nom', $payload['destinataire'] ?? '')->where('actif', true)->first();
+        if (!$sender || !$recipient) return response()->json(['message' => 'Une entité organisationnelle valide est requise.'], 422);
+        if ($recipient->type === 'direction_generale') return null;
+        $ids = [];
+        $pending = [$sender->id];
+        while ($pending) {
+            $pending = EntiteOrganisationnelle::whereIn('parent_id', $pending)->where('actif', true)->pluck('id')->all();
+            $ids = array_merge($ids, $pending);
+        }
+        return in_array($recipient->id, $ids, true)
+            ? null
+            : response()->json(['message' => 'Le destinataire doit être une unité rattachée à votre organisation ou la Direction Générale.'], 403);
     }
 
     private function mapToSnakeCase(array $input): array

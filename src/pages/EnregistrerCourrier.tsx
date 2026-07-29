@@ -21,6 +21,7 @@ import { TypeCourrier, Priorite, CategorieFichier, SensCourrier, CategorieCourri
 import { categorieFichierService } from '../services/categorieFichierService';
 import { formulaireCourrierService, ExtraFieldConfig, ExtraFieldsBySensAndType, FormStructure, urgencyOptionLabelToPriorite, prioriteToUrgencyOptionLabel } from '../services/formulaireCourrierService';
 import { optimizedUploadService } from '../services/optimizedUploadService';
+import { getAllowedRecipientIds, hasRestrictedCourrierShape, isRestrictedOrganisationManager } from '../utils/courrierOrganisationRules';
 // import { notificationService } from '../services/notificationService'; // Désactivé - Firestore
 import { adminService } from '../services/adminService';
 import { MaterialDateTimeField } from '../components/MaterialDateTimeField';
@@ -234,7 +235,8 @@ const EnregistrerCourrier: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const canCreateSortant = user?.role === Role.SECRETAIRE || user?.role === Role.SUPER_ADMIN || user?.role === Role.DIRECTEUR_GENERAL;
+  const isRestrictedManager = isRestrictedOrganisationManager(user);
+  const canCreateSortant = isRestrictedManager || user?.role === Role.SECRETAIRE || user?.role === Role.SUPER_ADMIN || user?.role === Role.DIRECTEUR_GENERAL;
   // Secrétaire DG = Secrétaire sans direction assignée OU direction = 'Direction Générale'
   const isSecretaireDG = user?.role === Role.SECRETAIRE &&
     (!user?.direction || user?.direction === 'Direction Générale');
@@ -392,6 +394,12 @@ const EnregistrerCourrier: React.FC = () => {
       ...(urlType && Object.values(TypeCourrier).includes(urlType) ? { type: urlType } : {})
     }));
   }, [searchParams.toString(), isEditMode]);
+
+  useEffect(() => {
+    if (!isEditMode && isRestrictedManager && !hasRestrictedCourrierShape(formData.type, formData.sens)) {
+      setFormData(prev => ({ ...prev, type: TypeCourrier.INTERNE, sens: SensCourrier.SORTANT }));
+    }
+  }, [formData.type, formData.sens, isEditMode, isRestrictedManager]);
 
   // Synchroniser les params URL quand l'utilisateur change sens/type dans le formulaire (pour le menu actif du sidebar)
   useEffect(() => {
@@ -1150,6 +1158,16 @@ const EnregistrerCourrier: React.FC = () => {
   
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (isRestrictedManager && !hasRestrictedCourrierShape(formData.type, formData.sens)) {
+      showAlert('Vous pouvez uniquement adresser des courriers internes sortants.', 'error');
+      return;
+    }
+    const allowedRecipientIds = getAllowedRecipientIds(user, entities);
+    const recipientId = Object.values(entiteDestinataire).at(-1);
+    if (isRestrictedManager && (!recipientId || !allowedRecipientIds.has(recipientId))) {
+      showAlert('Le destinataire doit être une unité rattachée à votre organisation ou la Direction Générale.', 'error');
+      return;
+    }
     // Guard : seul le Secrétaire DG (et SUPER_ADMIN) peut créer un courrier EXTERNE
     if (formData.type === TypeCourrier.EXTERNE && !canCreateExterne) {
       alert('Vous n\'êtes pas autorisé à créer un courrier externe. Cette action est réservée au Secrétaire de la Direction Générale.');
@@ -1217,7 +1235,7 @@ const EnregistrerCourrier: React.FC = () => {
           ...formDataForApi,
           expediteur: resolvedExpediteur || formData.expediteur,
           destinataire: resolvedDestinataire || formData.destinataire,
-          extraFields: { ...((formData.extraFields as Record<string, any>) || {}), ...extraFieldsResolved },
+          extraFields: { ...((formData.extraFields as Record<string, any>) || {}), ...extraFieldsResolved, entiteDestinataireJson: entiteDestinataire },
           modifiePar: user?.id || 'system',
           dateModification: new Date().toISOString(),
           priorite: resolvedPriorite
@@ -1242,7 +1260,7 @@ const EnregistrerCourrier: React.FC = () => {
           ...formDataForApi,
           expediteur: resolvedExpediteur || formData.expediteur,
           destinataire: resolvedDestinataire || formData.destinataire,
-          extraFields: extraFieldsResolved,
+          extraFields: { ...extraFieldsResolved, entiteDestinataireJson: entiteDestinataire },
           priorite: resolvedPriorite,
           createdAt: new Date().toISOString(),
           enregistrePar: user?.id || 'system'

@@ -226,6 +226,22 @@ class AdminService {
       },
       {
         id: '5',
+        nom: 'Chef de Division',
+        code: Role.CHEF_DIVISION,
+        description: 'Gestion de la division et de ses unités rattachées',
+        permissions: [
+          Permission.VOIR_COURRIERS,
+          Permission.CREER_COURRIER,
+          Permission.MODIFIER_COURRIER,
+          Permission.VOIR_UTILISATEURS,
+          Permission.FILTRER_PAR_SERVICE,
+          Permission.FILTRER_PAR_SOUS_SERVICE
+        ],
+        dateCreation: new Date(),
+        dateModification: new Date()
+      },
+      {
+        id: '6',
         nom: 'Chef de Service',
         code: Role.CHEF_SERVICE,
         description: 'Gestion du service et des agents',
@@ -240,7 +256,22 @@ class AdminService {
         dateModification: new Date()
       },
       {
-        id: '6',
+        id: '7',
+        nom: 'Chef de Bureau',
+        code: Role.CHEF_BUREAU,
+        description: 'Gestion du bureau et de ses unités rattachées',
+        permissions: [
+          Permission.VOIR_COURRIERS,
+          Permission.CREER_COURRIER,
+          Permission.MODIFIER_COURRIER,
+          Permission.VOIR_UTILISATEURS,
+          Permission.FILTRER_PAR_SOUS_SERVICE
+        ],
+        dateCreation: new Date(),
+        dateModification: new Date()
+      },
+      {
+        id: '8',
         nom: 'Agent',
         code: Role.AGENT,
         description: 'Agent opérationnel - Consultation et traitement des courriers',

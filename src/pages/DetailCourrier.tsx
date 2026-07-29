@@ -154,7 +154,9 @@ function getRoleLabel(role: Role): string {
     [Role.SECRETAIRE]: 'Secrétaire',
     [Role.DIRECTEUR_GENERAL]: 'Directeur général',
     [Role.DIRECTEUR]: 'Directeur',
+    [Role.CHEF_DIVISION]: 'Chef de division',
     [Role.CHEF_SERVICE]: 'Chef de service',
+    [Role.CHEF_BUREAU]: 'Chef de bureau',
     [Role.AGENT]: 'Agent'
   };
   return labels[role] ?? role;

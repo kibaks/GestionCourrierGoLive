@@ -4355,8 +4355,8 @@ const getAppropriateDirector = (user: Utilisateur | null) => {
    * Construit les filtres serveur selon le rôle et l'entité organisationnelle de l'utilisateur.
    * - SUPER_ADMIN / DIRECTEUR_GENERAL : pas de filtre (tous les courriers)
    * - SECRETAIRE DG (sans direction ou Direction Générale) : pas de filtre
-   * - SECRETAIRE de direction / DIRECTEUR : filtrer par direction
-   * - CHEF_SERVICE : filtrer par direction + service
+   * - SECRETAIRE de direction / DIRECTEUR / CHEF_DIVISION : filtrer par direction
+   * - CHEF_SERVICE / CHEF_BUREAU : filtrer par direction + service
    * - AGENT : pas de filtre serveur (filtrage fin fait côté client via assignations)
    */
   const buildServerFilters = (): { direction?: string; service?: string; role?: string } | undefined => {
@@ -4376,10 +4376,10 @@ const getAppropriateDirector = (user: Utilisateur | null) => {
     if (user.role === Role.SECRETAIRE && user.direction) {
       return { direction: user.direction, role: user.role };
     }
-    if (user.role === Role.DIRECTEUR && user.direction) {
+    if ((user.role === Role.DIRECTEUR || user.role === Role.CHEF_DIVISION) && user.direction) {
       return { direction: user.direction, role: user.role };
     }
-    if (user.role === Role.CHEF_SERVICE && user.direction) {
+    if ((user.role === Role.CHEF_SERVICE || user.role === Role.CHEF_BUREAU) && user.direction) {
       return {
         direction: user.direction,
         ...(user.service ? { service: user.service } : {}),
@@ -9165,7 +9165,7 @@ const getAppropriateDirector = (user: Utilisateur | null) => {
                 </span>
               </summary>
               <div className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden z-[100]">
-                {(user?.role === Role.SECRETAIRE || user?.role === Role.SUPER_ADMIN || user?.role === Role.DIRECTEUR_GENERAL) && (
+                {(user?.role === Role.SECRETAIRE || user?.role === Role.SUPER_ADMIN || user?.role === Role.DIRECTEUR_GENERAL || user?.role === Role.DIRECTEUR || user?.role === Role.CHEF_DIVISION || user?.role === Role.CHEF_BUREAU) && (
                   <>
                     <Link
                       to="/enregistrer"
@@ -9326,7 +9326,7 @@ const getAppropriateDirector = (user: Utilisateur | null) => {
                 {/* Nouveau / Exporter */}
                 <div className="pt-4 border-t border-gray-100 space-y-2">
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Nouveau & Exporter</label>
-                  {(user?.role === Role.SECRETAIRE || user?.role === Role.SUPER_ADMIN || user?.role === Role.DIRECTEUR_GENERAL) && (
+                  {(user?.role === Role.SECRETAIRE || user?.role === Role.SUPER_ADMIN || user?.role === Role.DIRECTEUR_GENERAL || user?.role === Role.DIRECTEUR || user?.role === Role.CHEF_DIVISION || user?.role === Role.CHEF_BUREAU) && (
                     <>
                       <Link to="/enregistrer" onClick={() => setShowActionsDrawer(false)} className="w-full px-4 py-2.5 rounded-xl text-sm bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 flex items-center justify-center gap-2">
                         <FontAwesomeIcon icon={faEnvelope} /> Nouveau courrier
@@ -14699,7 +14699,7 @@ const getAppropriateDirector = (user: Utilisateur | null) => {
                     <span>Réinitialiser accusé</span>
                   </button>
                 )}
-                {(user?.role === Role.SECRETAIRE || user?.role === Role.SUPER_ADMIN || user?.role === Role.DIRECTEUR_GENERAL) && (
+                {(user?.role === Role.SECRETAIRE || user?.role === Role.SUPER_ADMIN || user?.role === Role.DIRECTEUR_GENERAL || user?.role === Role.DIRECTEUR || user?.role === Role.CHEF_DIVISION || user?.role === Role.CHEF_BUREAU) && (
                   <Link
                     to={`/enregistrer?courrierId=${selectedCourrierForResume.id}`}
                     className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 text-sm"
@@ -15447,7 +15447,7 @@ const AssignCourrierForm: React.FC<{
     if (user.role === Role.SUPER_ADMIN || user.role === Role.DIRECTEUR_GENERAL || user.role === Role.SECRETAIRE) {
       return entities.filter(e => e.type === 'direction');
     }
-    if (user.role === Role.DIRECTEUR_GENERAL && user.direction) {
+    if (user.direction && (user.role === Role.DIRECTEUR || user.role === Role.CHEF_DIVISION || user.role === Role.CHEF_BUREAU || user.role === Role.CHEF_SERVICE)) {
       return entities.filter(e => e.type === 'direction' && e.nom === user.direction);
     }
     return [];

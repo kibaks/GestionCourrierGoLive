@@ -201,9 +201,13 @@ const Workflow: React.FC = () => {
       // Le directeur a sa direction verrouillée
       return levelCode === 'direction';
     }
-    if (user?.role === Role.CHEF_SERVICE) {
-      // Le chef de service/bureau a sa direction et division verrouillées
+    if (user?.role === Role.CHEF_SERVICE || user?.role === Role.CHEF_BUREAU) {
+      // Le chef de service/bureau a sa direction, division et service verrouillés
       return levelCode === 'direction' || levelCode === 'division' || levelCode === 'service';
+    }
+    if (user?.role === Role.CHEF_DIVISION) {
+      // Le chef de division a sa direction et division verrouillées
+      return levelCode === 'direction' || levelCode === 'division';
     }
     return false;
   };
@@ -435,14 +439,14 @@ const Workflow: React.FC = () => {
       if (!isDirecteur && !isDirecteurGeneral && user?.role !== Role.SUPER_ADMIN) {
         const rolesParType: Record<string, Role[]> = {
           // Au niveau direction générale, on cible tous les rôles sauf SUPER_ADMIN (sauf lui-même)
-          direction_generale: [Role.DIRECTEUR_GENERAL, Role.SECRETAIRE, Role.DIRECTEUR, Role.CHEF_SERVICE, Role.AGENT],
+          direction_generale: [Role.DIRECTEUR_GENERAL, Role.SECRETAIRE, Role.DIRECTEUR, Role.CHEF_DIVISION, Role.CHEF_BUREAU, Role.CHEF_SERVICE, Role.AGENT],
           // Au niveau direction, on cible TOUS les rôles de la direction (directeur, secrétaire, chefs, agents)
-          direction: [Role.DIRECTEUR, Role.SECRETAIRE, Role.CHEF_SERVICE, Role.AGENT],
+          direction: [Role.DIRECTEUR, Role.SECRETAIRE, Role.CHEF_DIVISION, Role.CHEF_BUREAU, Role.CHEF_SERVICE, Role.AGENT],
           // Pour les divisions / services / sous-services / bureaux, on cible les rôles pertinents
-          division: [Role.CHEF_SERVICE, Role.AGENT],
-          service: [Role.CHEF_SERVICE, Role.AGENT],
-          'sous-service': [Role.CHEF_SERVICE, Role.AGENT],
-          bureau: [Role.CHEF_SERVICE, Role.AGENT],
+          division: [Role.CHEF_DIVISION, Role.CHEF_BUREAU, Role.CHEF_SERVICE, Role.AGENT],
+          service: [Role.CHEF_SERVICE, Role.CHEF_BUREAU, Role.AGENT],
+          'sous-service': [Role.CHEF_SERVICE, Role.CHEF_BUREAU, Role.AGENT],
+          bureau: [Role.CHEF_BUREAU, Role.CHEF_SERVICE, Role.AGENT],
         };
 
         const rolesCibles = rolesParType[entityType as keyof typeof rolesParType];
@@ -525,10 +529,10 @@ const Workflow: React.FC = () => {
       const accessibles = await courrierService.getAccessibleCourriers(user.id, user);
       // Filtrage selon rôle :
       // - SUPER_ADMIN / DIRECTEUR_GENERAL : voient tout (hors ARCHIVE)
-      // - DIRECTEUR / CHEF_SERVICE : courriers de leur organisation (direction/service)
+      // - DIRECTEUR / CHEF_DIVISION / CHEF_BUREAU / CHEF_SERVICE : courriers de leur organisation (direction/service)
       // - AGENT : courriers avec au moins une étape assignée à l'agent
       const isSuper = user.role === Role.SUPER_ADMIN || user.role === Role.DIRECTEUR_GENERAL;
-      const isOrgManager = user.role === Role.DIRECTEUR || user.role === Role.CHEF_SERVICE;
+      const isOrgManager = user.role === Role.DIRECTEUR || user.role === Role.CHEF_DIVISION || user.role === Role.CHEF_BUREAU || user.role === Role.CHEF_SERVICE;
 
       let filtered = accessibles.filter(c => c.statut !== 'ARCHIVE');
 
@@ -595,7 +599,7 @@ const Workflow: React.FC = () => {
   const fetchWorkflowsFiltered = async (id: string): Promise<WorkflowEtape[]> => {
     if (!user) return [];
     const isSuper = user.role === Role.SUPER_ADMIN || user.role === Role.DIRECTEUR_GENERAL;
-    const isOrgManager = user.role === Role.DIRECTEUR || user.role === Role.CHEF_SERVICE;
+    const isOrgManager = user.role === Role.DIRECTEUR || user.role === Role.CHEF_DIVISION || user.role === Role.CHEF_BUREAU || user.role === Role.CHEF_SERVICE;
     const filterByRole = (workflowsData: WorkflowEtape[]) =>
       workflowsData.filter((w: WorkflowEtape) => {
         if (isSuper) return true;
@@ -1311,7 +1315,7 @@ const Workflow: React.FC = () => {
   };
 
   // ── Création inline d'étapes ──────────────────────────────────────────
-  const canCreateStep = user && (user.role === Role.DIRECTEUR_GENERAL || user.role === Role.DIRECTEUR || user.role === Role.CHEF_SERVICE);
+  const canCreateStep = user && (user.role === Role.DIRECTEUR_GENERAL || user.role === Role.DIRECTEUR || user.role === Role.CHEF_DIVISION || user.role === Role.CHEF_BUREAU || user.role === Role.CHEF_SERVICE);
 
   const startInlineCreate = (afterOrdre: number) => {
     if (!canCreateStep || !selectedCourrier) return;

@@ -55,6 +55,8 @@ export function getResponsabiliteLabel(role: Role | undefined, parentEntityType?
     [Role.DIRECTEUR_GENERAL]: 'Directeur général',
     [Role.SECRETAIRE]: 'Secrétaire',
     [Role.DIRECTEUR]: 'Directeur',
+    [Role.CHEF_DIVISION]: 'Chef de division',
+    [Role.CHEF_BUREAU]: 'Chef de bureau',
     [Role.CHEF_SERVICE]: 'Chef de service',
     [Role.AGENT]: 'Agent',
   };

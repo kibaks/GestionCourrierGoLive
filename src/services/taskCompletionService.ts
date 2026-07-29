@@ -43,7 +43,17 @@ const ROLE_COMPLETION_CONFIGS: RoleCompletionConfig[] = [
   {
     roles: [Role.CHEF_SERVICE],
     completionType: 'ANNOTATION_OR_STEP',
-    description: 'Pour le Chef de Service/Division/Bureau, la tâche est terminée quand au moins une annotation ou étape est créée'
+    description: 'Pour le Chef de Service, la tâche est terminée quand au moins une annotation ou étape est créée'
+  },
+  {
+    roles: [Role.CHEF_DIVISION],
+    completionType: 'ANNOTATION_OR_STEP',
+    description: 'Pour le Chef de Division, la tâche est terminée quand au moins une annotation ou étape est créée'
+  },
+  {
+    roles: [Role.CHEF_BUREAU],
+    completionType: 'ANNOTATION_OR_STEP',
+    description: 'Pour le Chef de Bureau, la tâche est terminée quand au moins une annotation ou étape est créée'
   },
   {
     roles: [Role.SECRETAIRE],
@@ -243,6 +253,8 @@ class TaskCompletionService {
     return [
       Role.DIRECTEUR_GENERAL,
       Role.DIRECTEUR,
+      Role.CHEF_DIVISION,
+      Role.CHEF_BUREAU,
       Role.CHEF_SERVICE
     ].includes(role);
   }
