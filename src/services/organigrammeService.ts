@@ -569,8 +569,10 @@ class OrganigrammeService {
             entity.type === 'sous-service' || entity.type === 'bureau' || entity.type === 'cellule';
 
           if (showOnlyChef) {
+            const preferredChefRole = entity.type === 'division' ? Role.CHEF_DIVISION : Role.CHEF_SERVICE;
             let chefToShow =
               responsableUser ??
+              entityUsers.find(u => u.role === preferredChefRole) ??
               entityUsers.find(u => u.role === Role.CHEF_SERVICE) ??
               (entityUsers.length > 0 ? entityUsers[0] : undefined);
 
@@ -663,9 +665,11 @@ class OrganigrammeService {
               });
             }
           } else if (showChefAndAgents) {
-            // Chef de bureau / sous-service / cellule : responsable explicite, sinon CHEF_SERVICE, sinon premier utilisateur
+            // Chef de bureau / sous-service / cellule : responsable explicite, sinon CHEF_BUREAU (pour un bureau), sinon CHEF_SERVICE, sinon premier utilisateur
+            const preferredChefRole = entity.type === 'bureau' ? Role.CHEF_BUREAU : Role.CHEF_SERVICE;
             const chefToShow =
               responsableUser ??
+              entityUsers.find(u => u.role === preferredChefRole) ??
               entityUsers.find(u => u.role === Role.CHEF_SERVICE) ??
               (entityUsers.length > 0 ? entityUsers[0] : undefined);
             if (chefToShow) {
