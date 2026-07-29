@@ -2304,7 +2304,9 @@ const ROLES_NORM: Record<string, string> = {
   SECRETAIRE: 'SECRETAIRE',
   DIRECTEUR_GENERAL: 'DIRECTEUR_GENERAL',
   DIRECTEUR: 'DIRECTEUR',
+  CHEF_DIVISION: 'CHEF_DIVISION',
   CHEF_SERVICE: 'CHEF_SERVICE',
+  CHEF_BUREAU: 'CHEF_BUREAU',
   AGENT: 'AGENT',
 };
 function normalizeRoleFromApi(role: unknown): Utilisateur['role'] {
