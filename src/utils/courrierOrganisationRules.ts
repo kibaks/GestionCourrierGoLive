@@ -44,3 +44,22 @@ export const getAllowedRecipientIds = (
 
 export const hasRestrictedCourrierShape = (type: TypeCourrier, sens: SensCourrier): boolean =>
   type === TypeCourrier.INTERNE && sens === SensCourrier.SORTANT;
+
+// Remonte la chaîne `parentId` depuis `entity` jusqu'à la racine et retourne un
+// Record<type, entityId> couvrant l'entité elle-même + tous ses ancêtres.
+// Utilisé pour pré-remplir/verrouiller la cascade Entité Destinataire selon la
+// hiérarchie propre de l'utilisateur (DIRECTEUR, CHEF_DIVISION, CHEF_BUREAU).
+export const buildHierarchyCascade = (
+  entity: EntiteOrganisationnelle | undefined,
+  allEntities: EntiteOrganisationnelle[],
+): Record<string, string> => {
+  const cascade: Record<string, string> = {};
+  let current = entity;
+  const visited = new Set<string>();
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    cascade[current.type] = current.id;
+    current = current.parentId ? allEntities.find(e => e.id === current!.parentId) : undefined;
+  }
+  return cascade;
+};

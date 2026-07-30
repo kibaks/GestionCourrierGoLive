@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import dayjs from 'dayjs';
@@ -21,7 +21,7 @@ import { TypeCourrier, Priorite, CategorieFichier, SensCourrier, CategorieCourri
 import { categorieFichierService } from '../services/categorieFichierService';
 import { formulaireCourrierService, ExtraFieldConfig, ExtraFieldsBySensAndType, FormStructure, urgencyOptionLabelToPriorite, prioriteToUrgencyOptionLabel } from '../services/formulaireCourrierService';
 import { optimizedUploadService } from '../services/optimizedUploadService';
-import { getAllowedRecipientIds, hasRestrictedCourrierShape, isRestrictedOrganisationManager } from '../utils/courrierOrganisationRules';
+import { getAllowedRecipientIds, hasRestrictedCourrierShape, isRestrictedOrganisationManager, getOrganisationEntity, buildHierarchyCascade } from '../utils/courrierOrganisationRules';
 // import { notificationService } from '../services/notificationService'; // Désactivé - Firestore
 import { adminService } from '../services/adminService';
 import { MaterialDateTimeField } from '../components/MaterialDateTimeField';
@@ -255,6 +255,13 @@ const EnregistrerCourrier: React.FC = () => {
   const [directions, setDirections] = useState(directionService.getAllDirections());
   const [services, setServices] = useState(directionService.getAllServices());
   const [entities, setEntities] = useState(entiteOrganisationnelleService.getAllEntities().filter(e => e.actif !== false));
+  const userEntity = useMemo(() => getOrganisationEntity(user, entities), [user, entities]);
+  // Niveaux ancêtres (Direction, +Division, etc. jusqu'au niveau propre de l'utilisateur inclus)
+  // à verrouiller dans la cascade Entité Destinataire pour les rôles restreints.
+  const lockedDestinataireLevelCodes = useMemo(
+    () => new Set(Object.keys(buildHierarchyCascade(userEntity, entities))),
+    [userEntity, entities]
+  );
   const [courrierFolders, setCategorieCourriers] = useState<CategorieCourrier[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
   const [scanners, setScanners] = useState<Scanner[]>([]);
@@ -284,7 +291,6 @@ const EnregistrerCourrier: React.FC = () => {
   // Cascade entités organisationnelles (INTERNE)
   const [entiteEmetteur, setEntiteEmetteur] = useState<Record<string, string>>({});
   const [entiteDestinataire, setEntiteDestinataire] = useState<Record<string, string>>({});
-  const [areEntitiesLocked, setAreEntitiesLocked] = useState<boolean>(false);
   
   // Fichiers existants du courrier en mode édition
   const [existingFiles, setExistingFiles] = useState<CategorieFichier[]>([]);
@@ -1428,86 +1434,19 @@ const EnregistrerCourrier: React.FC = () => {
         const loadedEntities = entiteOrganisationnelleService.getAllEntities().filter(e => e.actif !== false);
         setEntities(loadedEntities);
         
-        // Pré-sélectionner les entités de l'utilisateur courant (si aucune entité n'est déjà définie)
-        if (user) {
-          console.log('🔍 Pré-sélection des entités pour l\'utilisateur:', user.nom, { direction: user.direction, service: user.service, entiteId: user.entiteId });
-          
-          // Vérifier si les entités sont déjà définies (mode édition avec données existantes)
-          const hasExistingEmetteur = Object.keys(entiteEmetteur).length > 0;
+        // Pré-remplir et verrouiller la cascade Entité Destinataire selon la hiérarchie
+        // propre de l'utilisateur, uniquement pour les rôles responsables d'unité
+        // (DIRECTEUR, CHEF_DIVISION, CHEF_BUREAU) qui ne peuvent créer que des courriers
+        // internes sortants vers leurs descendants ou la Direction Générale. Seuls les
+        // niveaux ancêtres (jusqu'au niveau propre de l'utilisateur inclus) sont
+        // verrouillés ; le niveau enfant suivant reste libre pour choisir le destinataire
+        // précis. Les autres rôles gardent la cascade libre des deux côtés.
+        if (user && isRestrictedManager) {
           const hasExistingDestinataire = Object.keys(entiteDestinataire).length > 0;
-          
-          // Chercher l'entité correspondant à la direction de l'utilisateur
-          if (user.direction) {
-            const userDirectionEntity = loadedEntities.find(e => 
-              e.type === 'direction' && 
-              (e.nom === user.direction || e.id === user.direction)
-            );
-            if (userDirectionEntity && !hasExistingEmetteur && !hasExistingDestinataire) {
-              console.log('✅ Entité direction trouvée:', userDirectionEntity.nom);
-              // Pour les courriers internes, définir selon le sens
-              setEntiteEmetteur({ direction: userDirectionEntity.id });
-              setEntiteDestinataire({ direction: userDirectionEntity.id });
-              setAreEntitiesLocked(true);
-            }
-          }
-          
-          // Chercher l'entité correspondant au service de l'utilisateur
-          if (user.service) {
-            const userServiceEntity = loadedEntities.find(e => 
-              e.type === 'service' && 
-              (e.nom === user.service || e.id === user.service)
-            );
-            if (userServiceEntity && !hasExistingEmetteur && !hasExistingDestinataire) {
-              console.log('✅ Entité service trouvée:', userServiceEntity.nom);
-              // Trouver la division parente (si existe)
-              const parentDivision = loadedEntities.find(e => 
-                e.id === userServiceEntity.parentId && e.type === 'division'
-              );
-              // Trouver la direction parente
-              let parentDirection = null;
-              if (parentDivision) {
-                parentDirection = loadedEntities.find(e => 
-                  e.id === parentDivision.parentId && e.type === 'direction'
-                );
-              } else {
-                // Service directement sous une direction
-                parentDirection = loadedEntities.find(e => 
-                  e.id === userServiceEntity.parentId && e.type === 'direction'
-                );
-              }
-              const cascade: Record<string, string> = { service: userServiceEntity.id };
-              if (parentDivision) {
-                cascade.division = parentDivision.id;
-              }
-              if (parentDirection) {
-                cascade.direction = parentDirection.id;
-              }
-              setEntiteEmetteur(cascade);
-              setEntiteDestinataire(cascade);
-              setAreEntitiesLocked(true);
-            }
-          }
-          
-          // Si l'utilisateur a un entiteId direct (prioritaire si aucune entité existante)
-          if (user.entiteId && !hasExistingEmetteur && !hasExistingDestinataire) {
-            const userEntity = loadedEntities.find(e => e.id === user.entiteId);
-            if (userEntity) {
-              console.log('✅ Entité utilisateur trouvée:', userEntity.nom, 'Type:', userEntity.type);
-              const cascade: Record<string, string> = { [userEntity.type]: userEntity.id };
-              // Chercher les parents pour compléter la cascade
-              let currentParentId = userEntity.parentId;
-              while (currentParentId) {
-                const parent = loadedEntities.find(e => e.id === currentParentId);
-                if (parent) {
-                  cascade[parent.type] = parent.id;
-                  currentParentId = parent.parentId;
-                } else {
-                  break;
-                }
-              }
-              setEntiteEmetteur(cascade);
-              setEntiteDestinataire(cascade);
-              setAreEntitiesLocked(true);
+          if (!hasExistingDestinataire) {
+            const userOrgEntity = getOrganisationEntity(user, loadedEntities);
+            if (userOrgEntity) {
+              setEntiteDestinataire(buildHierarchyCascade(userOrgEntity, loadedEntities));
             }
           }
         }
@@ -2435,12 +2374,6 @@ const EnregistrerCourrier: React.FC = () => {
                           <h4 className="font-bold text-blue-900 text-sm">Entité Émettrice</h4>
                           <p className="text-xs text-blue-600">Service / département expéditeur</p>
                         </div>
-                        {areEntitiesLocked && (
-                          <span className="ml-auto text-xs text-amber-700 bg-amber-100 px-2 py-1 rounded-lg flex items-center gap-1">
-                            <FontAwesomeIcon icon={faLock} className="w-3 h-3" />
-                            Verrouillé
-                          </span>
-                        )}
                       </div>
                       <div className="space-y-3">
                         {filterLevels.map((level, idx) => {
@@ -2456,7 +2389,6 @@ const EnregistrerCourrier: React.FC = () => {
                               <select
                                 value={entiteEmetteur[level.code] || ''}
                                 onChange={(e) => handleEntiteEmetteurChange(level.code, e.target.value, idx)}
-                                disabled={areEntitiesLocked}
                                 className="w-full px-3 py-2.5 border-2 border-blue-200 rounded-xl focus:border-blue-500 focus:outline-none bg-white text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                               >
                                 <option value="">— Sélectionner —</option>
@@ -2495,15 +2427,24 @@ const EnregistrerCourrier: React.FC = () => {
                           const options = getEntitiesForLevel(level.code, parentId);
                           const isVisible = idx === 0 || !!getParentIdForLevel(idx, entiteDestinataire);
                           if (!isVisible) return null;
+                          // Niveau ancêtre verrouillé sur la hiérarchie propre de l'utilisateur
+                          // (rôles restreints uniquement, seul sens accessible : Sortant).
+                          const isLockedLevel = isRestrictedManager && lockedDestinataireLevelCodes.has(level.code);
                           return (
                             <div key={level.code} className="space-y-1">
-                              <label className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">
+                              <label className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800 uppercase tracking-wide">
                                 {level.libelleSingulier}
+                                {isLockedLevel && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full normal-case">
+                                    <FontAwesomeIcon icon={faLock} className="w-2.5 h-2.5" />Verrouillé
+                                  </span>
+                                )}
                               </label>
                               <select
                                 value={entiteDestinataire[level.code] || ''}
                                 onChange={(e) => handleEntiteDestinataireChange(level.code, e.target.value, idx)}
-                                className="w-full px-3 py-2.5 border-2 border-emerald-200 rounded-xl focus:border-emerald-500 focus:outline-none bg-white text-sm"
+                                disabled={isLockedLevel}
+                                className="w-full px-3 py-2.5 border-2 border-emerald-200 rounded-xl focus:border-emerald-500 focus:outline-none bg-white text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                               >
                                 <option value="">— Sélectionner —</option>
                                 {options.map(e => (

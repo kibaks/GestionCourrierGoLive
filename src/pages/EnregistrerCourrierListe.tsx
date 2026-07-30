@@ -18,7 +18,7 @@ import { entiteTypeService } from '../services/entiteTypeService';
 import { scannerService, checkScannerBackendHealth, Scanner, DEFAULT_SCAN_SETTINGS, type ScanSettings, type ScanFormat, type ScanPageSize } from '../services/scannerService';
 import { userSettingsService } from '../services/userSettingsService';
 import { TypeCourrier, Priorite, SensCourrier, CategorieCourrier, Role, EntiteOrganisationnelle, StatutCourrier, Courrier } from '../types';
-import { isRestrictedOrganisationManager, getOrganisationEntity, getAllowedRecipientIds } from '../utils/courrierOrganisationRules';
+import { isRestrictedOrganisationManager, getOrganisationEntity, getAllowedRecipientIds, buildHierarchyCascade } from '../utils/courrierOrganisationRules';
 import { MaterialDateTimeField } from '../components/MaterialDateTimeField';
 import MaterialInput from '../components/MaterialInput';
 import CustomDialog, { DialogOptions } from '../components/CustomDialog';
@@ -51,25 +51,6 @@ interface RowDefaults {
   destinataire?: string;
   entiteDestinataire?: Record<string, string>;
 }
-
-// Remonte la chaîne `parentId` depuis `entity` jusqu'à la racine et retourne un
-// Record<type, entityId> couvrant l'entité elle-même + tous ses ancêtres.
-// Utilisé pour pré-remplir/verrouiller la cascade Entité Destinataire selon la
-// hiérarchie propre de l'utilisateur (DIRECTEUR, CHEF_DIVISION, CHEF_BUREAU).
-const buildHierarchyCascade = (
-  entity: EntiteOrganisationnelle | undefined,
-  allEntities: EntiteOrganisationnelle[]
-): Record<string, string> => {
-  const cascade: Record<string, string> = {};
-  let current = entity;
-  const visited = new Set<string>();
-  while (current && !visited.has(current.id)) {
-    visited.add(current.id);
-    cascade[current.type] = current.id;
-    current = current.parentId ? allEntities.find(e => e.id === current!.parentId) : undefined;
-  }
-  return cascade;
-};
 
 const makeRow = (defaults: RowDefaults = {}): RowData => ({
   id: uid(),
