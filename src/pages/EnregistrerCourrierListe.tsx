@@ -23,7 +23,7 @@ import { MaterialDateTimeField } from '../components/MaterialDateTimeField';
 import MaterialInput from '../components/MaterialInput';
 import CustomDialog, { DialogOptions } from '../components/CustomDialog';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faTrash, faSave, faArrowLeft, faCheckCircle, faTimesCircle, faSpinner, faListAlt, faInfoCircle, faCopy, faChevronDown, faChevronUp, faChevronRight, faBuilding, faCheck, faFolder, faFolderOpen, faFolderPlus, faEllipsisV, faPen, faArrowsAlt, faTimes, faUpload, faPrint, faEye, faExclamationTriangle, faFilePdf, faFile, faExpand, faLink, faRotateLeft, faRotateRight, faMagnifyingGlassMinus, faMagnifyingGlassPlus, faDownload, faTasks, faEdit } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faTrash, faSave, faArrowLeft, faCheckCircle, faTimesCircle, faSpinner, faListAlt, faInfoCircle, faCopy, faChevronDown, faChevronUp, faChevronRight, faBuilding, faCheck, faFolder, faFolderOpen, faFolderPlus, faEllipsisV, faPen, faArrowsAlt, faTimes, faUpload, faPrint, faEye, faExclamationTriangle, faFilePdf, faFile, faExpand, faLink, faRotateLeft, faRotateRight, faMagnifyingGlassMinus, faMagnifyingGlassPlus, faDownload, faTasks, faEdit, faLock } from '@fortawesome/free-solid-svg-icons';
 
 interface RowData {
   id: string; sens: SensCourrier; type: TypeCourrier; dateReception: string;
@@ -49,7 +49,27 @@ interface RowDefaults {
   service?: string;
   expediteur?: string;
   destinataire?: string;
+  entiteDestinataire?: Record<string, string>;
 }
+
+// Remonte la chaîne `parentId` depuis `entity` jusqu'à la racine et retourne un
+// Record<type, entityId> couvrant l'entité elle-même + tous ses ancêtres.
+// Utilisé pour pré-remplir/verrouiller la cascade Entité Destinataire selon la
+// hiérarchie propre de l'utilisateur (DIRECTEUR, CHEF_DIVISION, CHEF_BUREAU).
+const buildHierarchyCascade = (
+  entity: EntiteOrganisationnelle | undefined,
+  allEntities: EntiteOrganisationnelle[]
+): Record<string, string> => {
+  const cascade: Record<string, string> = {};
+  let current = entity;
+  const visited = new Set<string>();
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    cascade[current.type] = current.id;
+    current = current.parentId ? allEntities.find(e => e.id === current!.parentId) : undefined;
+  }
+  return cascade;
+};
 
 const makeRow = (defaults: RowDefaults = {}): RowData => ({
   id: uid(),
@@ -65,7 +85,7 @@ const makeRow = (defaults: RowDefaults = {}): RowData => ({
   referenceExterne: '',
   extraFields: {},
   entiteEmetteur: {},
-  entiteDestinataire: {},
+  entiteDestinataire: defaults.entiteDestinataire ?? {},
 });
 const validate = (r: RowData, cols: ExtraFieldConfig[]): RowError => {
   const e: RowError = {};
@@ -118,6 +138,10 @@ const EnregistrerCourrierListe: React.FC = () => {
       defaults.type = TypeCourrier.INTERNE;
       defaults.expediteur = userEntity?.nom || userDirection || 'Direction Générale';
       defaults.destinataire = '';
+      // Pré-remplit la cascade Entité Destinataire avec la Direction (+ Division, etc.)
+      // propre à l'utilisateur : ces niveaux ancêtres seront verrouillés à l'affichage,
+      // seul le niveau enfant suivant reste libre pour choisir le destinataire précis.
+      defaults.entiteDestinataire = userEntity ? buildHierarchyCascade(userEntity, entities) : {};
       return defaults;
     }
 
@@ -259,6 +283,12 @@ const EnregistrerCourrierListe: React.FC = () => {
   const allowedRecipientIds = useMemo(() =>
     getAllowedRecipientIds(user, entities),
     [user, entities]
+  );
+  // Niveaux ancêtres (Direction, Division, etc. jusqu'au niveau propre de l'utilisateur inclus)
+  // à verrouiller dans la cascade Entité Destinataire pour les rôles restreints.
+  const lockedDestinataireLevelCodes = useMemo(
+    () => new Set(Object.keys(buildHierarchyCascade(userEntity, entities))),
+    [userEntity, entities]
   );
 
   // Champs structurels gérés par des colonnes fixes dédiées — ne pas les dupliquer
@@ -1482,16 +1512,26 @@ const EnregistrerCourrierListe: React.FC = () => {
                           if (!isVisible) return null;
                           const borderCls = row.sens === SensCourrier.ENTRANT ? 'border-blue-200 focus:border-blue-500' : 'border-emerald-200 focus:border-emerald-500';
                           const labelCls = row.sens === SensCourrier.ENTRANT ? 'text-blue-800' : 'text-emerald-800';
+                          // Niveau ancêtre verrouillé sur la hiérarchie propre de l'utilisateur (rôles restreints,
+                          // uniquement côté Destinataire pour un courrier interne sortant).
+                          const isLockedLevel = isRestrictedRole && row.sens === SensCourrier.SORTANT && lockedDestinataireLevelCodes.has(level.code);
                           return (
                             <div key={level.code}>
-                              <label className={`block text-xs font-semibold mb-1 uppercase tracking-wide ${labelCls}`}>{level.libelleSingulier}</label>
+                              <label className={`flex items-center gap-1.5 text-xs font-semibold mb-1 uppercase tracking-wide ${labelCls}`}>
+                                {level.libelleSingulier}
+                                {isLockedLevel && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full normal-case">
+                                    <FontAwesomeIcon icon={faLock} className="w-2.5 h-2.5" />Verrouillé
+                                  </span>
+                                )}
+                              </label>
                               <select
                                 value={cascade[level.code] || ''}
                                 onChange={e => row.sens === SensCourrier.ENTRANT
                                   ? updEntiteEmetteur(row.id, level.code, e.target.value, lvlIdx)
                                   : updEntiteDestinataire(row.id, level.code, e.target.value, lvlIdx)}
-                                disabled={st === 'saved'}
-                                className={`w-full px-3 py-2 border-2 rounded-xl text-sm focus:outline-none bg-white disabled:opacity-60 ${borderCls}`}>
+                                disabled={st === 'saved' || isLockedLevel}
+                                className={`w-full px-3 py-2 border-2 rounded-xl text-sm focus:outline-none bg-white disabled:opacity-60 disabled:cursor-not-allowed ${borderCls}`}>
                                 <option value="">- Sélectionner -</option>
                                 {options.map(e => <option key={e.id} value={e.id}>{e.nom}</option>)}
                               </select>
