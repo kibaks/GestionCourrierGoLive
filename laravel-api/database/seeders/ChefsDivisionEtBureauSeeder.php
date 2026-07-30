@@ -14,12 +14,12 @@ use Illuminate\Support\Str;
  * Idempotent : identifié par email (updateOrCreate), peut être relancé sans
  * créer de doublons.
  *
- * Mot de passe temporaire commun à changer à la première connexion :
- * voir DEFAULT_PASSWORD ci-dessous.
+ * Mot de passe commun aligné sur la convention du reste de la base
+ * (DatabaseSeeder / UtilisateursCongolaIsSeeder) : voir DEFAULT_PASSWORD.
  */
 class ChefsDivisionEtBureauSeeder extends Seeder
 {
-    private const DEFAULT_PASSWORD = 'ChefUnite@2026';
+    private const DEFAULT_PASSWORD = 'password';
 
     /** @var array<int, array{entiteId:string, role:string, nom:string, email:string, direction:string}> */
     private const CHEFS = [
