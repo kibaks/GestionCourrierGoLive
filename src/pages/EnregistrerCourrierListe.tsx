@@ -170,6 +170,16 @@ const EnregistrerCourrierListe: React.FC = () => {
     return defaults;
   };
 
+  // Entités organisationnelles + entité de l'utilisateur : déclarées avant `rows` car
+  // `getDefaults()` (appelé dans l'initialiseur paresseux de `rows` ci-dessous) lit
+  // `userEntity` en closure. Les déclarer plus tard provoquait un
+  // "Cannot access 'userEntity' before initialization" pour les rôles restreints
+  // (DIRECTEUR, CHEF_DIVISION, CHEF_BUREAU) dès le premier rendu.
+  const [entities, setEntities] = useState<EntiteOrganisationnelle[]>(() =>
+    entiteOrganisationnelleService.getAllEntities().filter(e => e.actif !== false)
+  );
+  const userEntity = useMemo(() => getOrganisationEntity(user, entities), [user, entities]);
+
   const [rows, setRows] = useState<RowData[]>(() => { const d = getDefaults(); return [makeRow(d), makeRow(d)]; });
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const userDefaultsApplied = useRef(false);
@@ -232,9 +242,6 @@ const EnregistrerCourrierListe: React.FC = () => {
   // États pour la prévisualisation des fichiers
   const [previewFile, setPreviewFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [entities, setEntities] = useState<EntiteOrganisationnelle[]>(() =>
-    entiteOrganisationnelleService.getAllEntities().filter(e => e.actif !== false)
-  );
   const filterLevels = entiteTypeService.getActiveTypesForFilters();
 
   // Sens/type actifs (contrôlent les colonnes dynamiques)
@@ -249,7 +256,6 @@ const EnregistrerCourrierListe: React.FC = () => {
 
   // Rôles responsables d'unité : création restreinte aux courriers internes sortants vers leurs descendants ou la DG
   const isRestrictedRole = user ? isRestrictedOrganisationManager(user) : false;
-  const userEntity = useMemo(() => getOrganisationEntity(user, entities), [user, entities]);
   const allowedRecipientIds = useMemo(() =>
     getAllowedRecipientIds(user, entities),
     [user, entities]
