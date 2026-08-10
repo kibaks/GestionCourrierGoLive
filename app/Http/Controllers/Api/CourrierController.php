@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Courrier;
+use App\Models\CourrierFichier;
 use App\Models\EntiteOrganisationnelle;
 use App\Models\User;
 use App\Services\CourrierAccessService;
@@ -27,6 +28,42 @@ class CourrierController extends Controller
     public function __construct(
         private CourrierAccessService $accessService
     ) {}
+
+    /**
+     * Nombre de fichiers pour une liste de courriers.
+     * GET /api/courriers/files-counts?ids=uuid1,uuid2,...
+     * Retourne { "data": { "uuid1": 3, "uuid2": 0 } }
+     * Ne lève jamais d'exception — les IDs inconnus retournent 0.
+     */
+    public function filesCounts(Request $request): JsonResponse
+    {
+        $raw = $request->input('ids', '');
+        // Support virgule ET encodage URL (%2C)
+        $ids = array_values(array_filter(
+            array_map('trim', explode(',', urldecode($raw))),
+            fn ($id) => $id !== '' && Str::isUuid($id)
+        ));
+
+        if (empty($ids)) {
+            return response()->json(['data' => (object) []]);
+        }
+
+        // Compte les fichiers (pas les dossiers) groupés par courrier_id
+        $counts = CourrierFichier::whereIn('courrier_id', $ids)
+            ->where('type', 'fichier')
+            ->selectRaw('courrier_id, COUNT(*) as total')
+            ->groupBy('courrier_id')
+            ->pluck('total', 'courrier_id')
+            ->toArray();
+
+        // S'assurer que tous les IDs demandés sont dans la réponse (0 si aucun fichier)
+        $result = [];
+        foreach ($ids as $id) {
+            $result[$id] = (int) ($counts[$id] ?? 0);
+        }
+
+        return response()->json(['data' => $result]);
+    }
 
     /**
      * Liste des courriers accessibles pour l'utilisateur connecté (aligné Firebase).

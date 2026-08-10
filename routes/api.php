@@ -98,6 +98,10 @@ Route::middleware('auth:api')->group(function () {
     // Import en lot (avant apiResource pour que "bulk" ne soit pas pris pour un id)
     Route::post('courriers/bulk', [CourrierController::class, 'bulkStore']);
 
+    // Nombre de fichiers par courrier — DOIT être avant apiResource pour ne pas être capturé comme {courrier}
+    // Corrige le ModelNotFoundException sur /api/courriers/files-counts
+    Route::get('courriers/files-counts', [CourrierController::class, 'filesCounts']);
+
     // Mise à jour du statut uniquement (pas de vérification de permission complexe)
     Route::patch('courriers/{id}/statut', [CourrierController::class, 'updateStatut']);
 

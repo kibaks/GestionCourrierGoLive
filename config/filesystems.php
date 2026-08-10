@@ -16,8 +16,15 @@ return [
             'throw' => false,
         ],
 
-        // Fichiers des courriers : stockage PUBLIC sous storage/app/public/courriers/{courrierId}/fichiers/
+        // Fichiers des courriers : stockage PRIVÉ sous storage/app/courriers/
         'courrier_fichiers' => [
+            'driver' => 'local',
+            'root' => storage_path('app/courriers'),
+            'throw' => false,
+        ],
+
+        // Compatibilité rétrograde pour les fichiers publics
+        'courrier_public' => [
             'driver' => 'local',
             'root' => storage_path('app/public/courriers'),
             'url' => env('APP_URL') . '/storage/courriers',

@@ -261,6 +261,36 @@ class CourrierFichierController extends Controller
             : 100;
         $maxSizeKb = $maxSizeMo * 1024;
 
+        // ── Détection anticipée des erreurs PHP d'upload (avant la validation Laravel) ──
+        // Quand PHP rejette le fichier (trop gros vs upload_max_filesize ou post_max_size),
+        // la requête arrive vide et Laravel signale juste "fichier requis" — pas clair pour l'utilisateur.
+        $uploadedRaw = $request->file('file');
+        if ($uploadedRaw && $uploadedRaw->getError() === UPLOAD_ERR_INI_SIZE) {
+            return response()->json([
+                'message' => "Le fichier dépasse la limite PHP du serveur (upload_max_filesize). Contactez l'administrateur ou utilisez l'envoi en base64.",
+                'errors' => ['file' => ["Le fichier dépasse la limite serveur PHP. Limite applicative : {$maxSizeMo} Mo."]],
+                'error_code' => 'PHP_UPLOAD_LIMIT',
+                'maxSizeMo' => $maxSizeMo,
+            ], 422);
+        }
+        if ($uploadedRaw && $uploadedRaw->getError() === UPLOAD_ERR_FORM_SIZE) {
+            return response()->json([
+                'message' => "Le fichier dépasse la taille maximale autorisée par le formulaire.",
+                'errors' => ['file' => ["Le fichier dépasse la limite du formulaire."]],
+                'error_code' => 'FORM_UPLOAD_LIMIT',
+                'maxSizeMo' => $maxSizeMo,
+            ], 422);
+        }
+        // Si la requête est vide (post_max_size dépassé côté PHP), $_FILES est vide
+        if (!$uploadedRaw && $request->server('CONTENT_LENGTH') > 0 && empty($request->all())) {
+            return response()->json([
+                'message' => "La taille totale de la requête dépasse la limite PHP (post_max_size). Réduisez la taille du fichier ou contactez l'administrateur.",
+                'errors' => ['file' => ['Requête trop volumineuse pour le serveur PHP.']],
+                'error_code' => 'POST_SIZE_LIMIT',
+                'maxSizeMo' => $maxSizeMo,
+            ], 422);
+        }
+
         try {
             $request->validate([
                 'file' => ['required', 'file', 'max:' . $maxSizeKb],
