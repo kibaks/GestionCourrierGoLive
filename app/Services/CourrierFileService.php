@@ -30,6 +30,10 @@ class CourrierFileService
         // 1. Collecter tous les UploadedFile présents dans la requête
         $uploadedFiles = $this->extractUploadedFiles($request);
 
+        // 2. Récupérer les fichiers scannés (scan-preview) ou fichiers temporaires référencés
+        $tempUploadedFiles = $this->extractTempFiles($request);
+        $uploadedFiles = array_merge($uploadedFiles, $tempUploadedFiles);
+
         foreach ($uploadedFiles as $file) {
             if ($file instanceof UploadedFile && $file->isValid()) {
                 $saved = $this->saveUploadedFile($file, $courrier->id, $userId);
@@ -39,7 +43,7 @@ class CourrierFileService
             }
         }
 
-        // 2. Traiter les fichiers envoyés en Base64 (ex: JSON body)
+        // 3. Traiter les fichiers envoyés en Base64 (ex: JSON body)
         $base64Files = $this->extractBase64Files($request);
         foreach ($base64Files as $b64) {
             $saved = $this->saveBase64File($b64['base64'], $b64['name'], $courrier->id, $userId);
@@ -48,7 +52,7 @@ class CourrierFileService
             }
         }
 
-        // 3. Si un/des fichier(s) ont été créés et que $courrier->fichier n'est pas encore défini
+        // 4. Si un/des fichier(s) ont été créés et que $courrier->fichier n'est pas encore défini
         if (!empty($createdFiles) && empty($courrier->fichier)) {
             $firstFile = $createdFiles[0];
             $courrier->fichier = $firstFile->chemin;
@@ -85,6 +89,74 @@ class CourrierFileService
         }
 
         return $files;
+    }
+
+    /**
+     * Extrait et résout les identifiants de prévisualisation scannée (previewId, scanPreviewId)
+     * ou les fichiers temporaires référencés par chaîne de caractères.
+     *
+     * @return UploadedFile[]
+     */
+    private function extractTempFiles(Request $request): array
+    {
+        $tempFiles = [];
+        $candidateStrings = [];
+
+        // Identifiants de prévisualisation / scan
+        foreach (['previewId', 'scanPreviewId', 'scannedFileId', 'tempFileId'] as $key) {
+            if ($request->filled($key)) {
+                $candidateStrings[] = $request->input($key);
+            }
+        }
+
+        // Champ fichier s'il est transmis sous forme de chaîne (chemin / identifiant)
+        if (is_string($request->input('fichier')) && !empty($request->input('fichier'))) {
+            $candidateStrings[] = $request->input('fichier');
+        }
+
+        // Dans extraFields
+        $extra = $request->input('extraFields');
+        if (is_array($extra)) {
+            foreach (['previewId', 'scanPreviewId', 'scannedFile', 'tempFile', 'fichier'] as $key) {
+                if (!empty($extra[$key]) && is_string($extra[$key])) {
+                    $candidateStrings[] = $extra[$key];
+                }
+            }
+        }
+
+        $processedPaths = [];
+
+        foreach ($candidateStrings as $str) {
+            $str = trim((string) $str);
+            if ($str === '' || str_starts_with($str, 'data:')) continue;
+
+            $basename = basename(parse_url($str, PHP_URL_PATH) ?? $str);
+
+            $possiblePaths = [
+                storage_path('app/scan-preview/' . $basename),
+                storage_path('app/scan-preview/' . $str),
+                storage_path('app/upload_tmp/' . $basename),
+                storage_path('app/upload_tmp/' . $str),
+                storage_path('app/' . ltrim($str, '/')),
+            ];
+
+            foreach ($possiblePaths as $path) {
+                if (File::isFile($path) && !in_array($path, $processedPaths, true)) {
+                    $processedPaths[] = $path;
+                    $mimeType = File::mimeType($path) ?: 'application/pdf';
+                    $tempFiles[] = new UploadedFile(
+                        $path,
+                        $basename,
+                        $mimeType,
+                        \UPLOAD_ERR_OK,
+                        true
+                    );
+                    break;
+                }
+            }
+        }
+
+        return $tempFiles;
     }
 
     /**
