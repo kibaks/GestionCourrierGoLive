@@ -8,6 +8,7 @@ use App\Models\CourrierFichier;
 use App\Models\EntiteOrganisationnelle;
 use App\Models\User;
 use App\Services\CourrierAccessService;
+use App\Services\CourrierFileService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -26,7 +27,8 @@ use Throwable;
 class CourrierController extends Controller
 {
     public function __construct(
-        private CourrierAccessService $accessService
+        private CourrierAccessService $accessService,
+        private CourrierFileService $fileService
     ) {}
 
     /**
@@ -171,7 +173,12 @@ class CourrierController extends Controller
             'enregistrePar' => 'nullable|string|max:255',
             'direction' => 'nullable|string|max:255',
             'service' => 'nullable|string|max:255',
-            'fichier' => 'nullable|string',
+            'fichier' => 'nullable',
+            'file' => 'nullable',
+            'files' => 'nullable',
+            'fichiers' => 'nullable',
+            'fileBase64' => 'nullable|string',
+            'fileName' => 'nullable|string',
             'extraFields' => 'nullable|array',
         ]);
 
@@ -251,9 +258,12 @@ class CourrierController extends Controller
             }
         }
 
+        // Traiter et enregistrer automatiquement les fichiers joints à la création
+        $this->fileService->handleRequestFiles($request, $courrier, (string) $user->id);
+
         $this->clearCourrierCache($user);
 
-        return response()->json(['data' => $courrier->toArray()], 201);
+        return response()->json(['data' => $courrier->fresh()->toArray()], 201);
     }
 
     /**
@@ -438,6 +448,7 @@ class CourrierController extends Controller
                 $message = config('app.debug') ? $e->getMessage() : 'Erreur lors de la mise à jour du courrier.';
                 return response()->json(['message' => $message], 500);
             }
+            $this->fileService->handleRequestFiles($request, $courrier, (string) $user->id);
             $this->clearCourrierCache($user);
             return response()->json(['data' => $courrier->fresh()->toArray()]);
         }
@@ -526,8 +537,9 @@ class CourrierController extends Controller
             return response()->json(['message' => $message], 500);
         }
 
+        $this->fileService->handleRequestFiles($request, $courrier, (string) $user->id);
         $this->clearCourrierCache($user);
-        return response()->json(['data' => $courrier->toArray()], 201);
+        return response()->json(['data' => $courrier->fresh()->toArray()], 201);
     }
 
     /**

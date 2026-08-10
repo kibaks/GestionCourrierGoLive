@@ -25,6 +25,11 @@ class Courrier extends Model
         return $this->hasMany(WorkflowEtape::class, 'courrier_id');
     }
 
+    public function fichiers(): HasMany
+    {
+        return $this->hasMany(CourrierFichier::class, 'courrier_id');
+    }
+
     protected $table = 'courriers';
 
     protected $fillable = [
