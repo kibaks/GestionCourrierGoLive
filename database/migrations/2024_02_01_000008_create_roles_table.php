@@ -1,0 +1,29 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        if (Schema::hasTable('roles')) {
+            return;
+        }
+        Schema::create('roles', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('nom');
+            $table->string('code', 32)->unique(); // SUPER_ADMIN, SECRETAIRE, etc.
+            $table->text('description')->nullable();
+            $table->json('permissions')->nullable(); // tableau de codes Permission
+            $table->timestamps();
+            $table->index('code');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('roles');
+    }
+};

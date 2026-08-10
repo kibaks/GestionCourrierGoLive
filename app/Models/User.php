@@ -1,0 +1,131 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Tymon\JWTAuth\Contracts\JWTSubject;
+
+/**
+ * Utilisateur avec rôles et permissions (aligné Firebase / Firestore).
+ * Rôles : SUPER_ADMIN, DIRECTEUR_GENERAL, SECRETAIRE, DIRECTEUR, CHEF_DIVISION, CHEF_SERVICE, CHEF_BUREAU, AGENT.
+ */
+class User extends Authenticatable implements JWTSubject
+{
+    use HasUuids, HasFactory, Notifiable;
+
+    protected $table = 'users';
+
+    protected $fillable = [
+        'name',
+        'first_name',
+        'last_name',
+        'email',
+        'photo_url',
+        'password',
+        'two_factor_secret',
+        'two_factor_confirmed_at',
+        'two_factor_recovery_codes',
+        'role',
+        'direction',
+        'service',
+        'job_title',
+        'professional_phone',
+        'personal_phone',
+        'bio',
+        'address',
+        'city',
+        'country',
+        'cover_url',
+        'profile_visibility',
+        'notification_preferences',
+        'sms_phone',
+        'sms_verified_at',
+        'entite_id',
+        'actif',
+    ];
+
+    protected $hidden = [
+        'password',
+        'remember_token',
+        'two_factor_secret',
+        'two_factor_recovery_codes',
+    ];
+
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+        'password' => 'hashed',
+        'actif' => 'boolean',
+        'two_factor_confirmed_at' => 'datetime',
+        'profile_visibility' => 'array',
+        'notification_preferences' => 'array',
+        'sms_verified_at' => 'datetime',
+    ];
+
+    public function getJWTIdentifier(): mixed
+    {
+        return $this->getKey();
+    }
+
+    public function getJWTCustomClaims(): array
+    {
+        return [
+            'role' => $this->role,
+            'direction' => $this->direction,
+            'service' => $this->service,
+        ];
+    }
+
+    public function assignationsRecues(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Assignation::class, 'assigne_a', 'id');
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        return $this->role === 'SUPER_ADMIN';
+    }
+
+    public function isDirecteurGeneral(): bool
+    {
+        return $this->role === 'DIRECTEUR_GENERAL';
+    }
+
+    public function isSecretaire(): bool
+    {
+        return $this->role === 'SECRETAIRE';
+    }
+
+    public function isDirecteur(): bool
+    {
+        return $this->role === 'DIRECTEUR';
+    }
+
+    public function isChefDivision(): bool
+    {
+        return $this->role === 'CHEF_DIVISION';
+    }
+
+    public function isChefService(): bool
+    {
+        return $this->role === 'CHEF_SERVICE';
+    }
+
+    public function isChefBureau(): bool
+    {
+        return $this->role === 'CHEF_BUREAU';
+    }
+
+    public function isAgent(): bool
+    {
+        return $this->role === 'AGENT';
+    }
+
+    /** Voir tous les courriers (comme Firebase) */
+    public function canSeeAllCourriers(): bool
+    {
+        return $this->isSuperAdmin() || $this->isDirecteurGeneral() || $this->isSecretaire();
+    }
+}
