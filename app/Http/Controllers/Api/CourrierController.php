@@ -159,6 +159,13 @@ class CourrierController extends Controller
     {
         $user = Auth::user();
 
+        if ($request->has('extraFields') && is_string($request->input('extraFields'))) {
+            $decoded = json_decode($request->input('extraFields'), true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $request->merge(['extraFields' => $decoded]);
+            }
+        }
+
         $validated = $request->validate([
             'numero' => 'nullable|string|max:64',
             'type' => 'required|in:INTERNE,EXTERNE',

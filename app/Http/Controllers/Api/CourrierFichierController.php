@@ -20,6 +20,8 @@ use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
+use App\Services\CourrierFileService;
+
 class CourrierFichierController extends Controller
 {
     /** Disque dédié : root = storage/app/courriers, chemins = {courrierId}/fichiers/{filename} */
@@ -31,7 +33,8 @@ class CourrierFichierController extends Controller
     private const STORAGE_QUOTA_BYTES = 1073741824;
 
     public function __construct(
-        private CourrierAccessService $accessService
+        private CourrierAccessService $accessService,
+        private CourrierFileService $fileService
     ) {}
 
     /**
@@ -139,13 +142,13 @@ class CourrierFichierController extends Controller
                 $userId = 'system';
             }
 
-            if ($request->hasFile('file')) {
-                return $this->uploadFile($request, $courrierId, $userId);
-            }
-
-            // Upload en base64 (contourne l'erreur PHP "unable to create a temporary file" quand upload_tmp_dir est injoignable)
-            if ($request->isJson() && $request->has('fileBase64') && $request->has('fileName')) {
-                return $this->uploadFileFromBase64($request, $courrierId, $userId);
+            // Traiter tout fichier joint transmis dans la requête (file, fichier, files, fichiers, base64, etc.)
+            $createdFiles = $this->fileService->handleRequestFiles($request, $courrier, $userId);
+            if (!empty($createdFiles)) {
+                $data = count($createdFiles) === 1
+                    ? $createdFiles[0]->toArray()
+                    : array_map(fn ($f) => $f->toArray(), $createdFiles);
+                return response()->json(['data' => $data], 201);
             }
 
             $validated = $request->validate([
