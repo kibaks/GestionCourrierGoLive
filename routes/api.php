@@ -158,6 +158,9 @@ Route::middleware('auth:api')->group(function () {
     // Utilisateurs (admin SUPER_ADMIN uniquement)
     Route::apiResource('users', UsersController::class)->only(['index', 'show', 'store', 'update', 'destroy']);
 
+    // Courriers d'un utilisateur — badges du module Organigramme (SUPER_ADMIN / DIRECTEUR_GENERAL / lui-même)
+    Route::get('users/{id}/courriers', [UsersController::class, 'courriers']);
+
     // ----- Paramétrage (lecture auth, écriture SUPER_ADMIN) -----
     Route::get('roles', [RolesController::class, 'index']);
     Route::get('roles/{id}', [RolesController::class, 'show']);

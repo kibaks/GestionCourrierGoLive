@@ -13,9 +13,9 @@ class EntiteOrganisationnelle extends Model
 
     protected $table = 'entites_organisationnelles';
 
-    protected $fillable = ['nom', 'type', 'description', 'parent_id', 'ordre', 'actif', 'responsable_id'];
+    protected $fillable = ['nom', 'type', 'description', 'courrier_roles', 'parent_id', 'ordre', 'actif', 'responsable_id'];
 
-    protected $casts = ['actif' => 'boolean', 'ordre' => 'integer'];
+    protected $casts = ['actif' => 'boolean', 'ordre' => 'integer', 'courrier_roles' => 'array'];
 
     public function parent(): BelongsTo
     {
@@ -35,6 +35,7 @@ class EntiteOrganisationnelle extends Model
             'nom' => $arr['nom'],
             'type' => $arr['type'],
             'description' => $arr['description'] ?? null,
+            'courrierRoles' => $arr['courrier_roles'] ?? null,
             'parentId' => $arr['parent_id'] ?? null,
             'ordre' => (int) ($arr['ordre'] ?? 0),
             'actif' => (bool) ($arr['actif'] ?? true),

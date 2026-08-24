@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Assignation;
+use App\Models\Courrier;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,6 +41,50 @@ class UsersController extends Controller
         $this->authorize('voir-utilisateurs');
         $user = User::findOrFail($id);
         return response()->json(['data' => $this->userToArray($user)]);
+    }
+
+    /**
+     * Courriers assignés à un utilisateur — badges du module Organigramme.
+     * GET /api/users/{id}/courriers?statut=enCours|traite|autres
+     * Accès : SUPER_ADMIN, DIRECTEUR_GENERAL ou l'utilisateur lui-même.
+     */
+    public function courriers(Request $request, string $id): JsonResponse
+    {
+        $user = User::findOrFail($id);
+        $me = Auth::user();
+        $isAuthorized = $me !== null && ($me->id === $id || in_array($me->role, ['SUPER_ADMIN', 'DIRECTEUR_GENERAL'], true));
+        if (!$isAuthorized) {
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
+
+        $statut = (string) $request->input('statut', 'enCours');
+        $enCours = ['EN_TRAITEMENT', 'ASSIGNE', 'EN_ATTENTE_DG'];
+        $traite = ['TRAITE', 'ARCHIVE'];
+
+        $courriers = Courrier::whereIn('id', Assignation::where('assigne_a', $id)->pluck('courrier_id'))
+            ->orderByDesc('date_enregistrement')
+            ->limit(200)
+            ->get()
+            ->map(function (Courrier $c) {
+                return [
+                    'id' => $c->id,
+                    'objet' => $c->objet,
+                    'reference' => $c->numero,
+                    'numero' => $c->numero,
+                    'expediteur' => $c->expediteur,
+                    'date' => $c->date_enregistrement,
+                    'statut' => $c->statut,
+                ];
+            })
+            ->filter(function (array $c) use ($statut, $enCours, $traite) {
+                $s = strtoupper((string) ($c['statut'] ?? ''));
+                if ($statut === 'enCours') return in_array($s, $enCours, true);
+                if ($statut === 'traite') return in_array($s, $traite, true);
+                return !in_array($s, array_merge($enCours, $traite), true);
+            })
+            ->values();
+
+        return response()->json(['data' => $courriers->all()]);
     }
 
     /**
