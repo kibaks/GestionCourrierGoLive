@@ -11,11 +11,41 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class CourrierFileService
 {
     private const DISK_COURRIER = 'courrier_fichiers';
+
+    /**
+     * Extensions de fichiers autorisées (C7 — sécurité : whitelist stricte).
+     * Refuse PHP, HTML/SVG/JS, executables, etc.
+     */
+    public const ALLOWED_EXTENSIONS = [
+        'pdf', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'bmp', 'webp', 'gif',
+        'doc', 'docx', 'xls', 'xlsx', 'odt', 'ods', 'odp', 'ppt', 'pptx',
+        'txt', 'csv', 'rtf',
+        'mp3', 'mp4', 'wav',
+    ];
+
+    /** Plafond dur pour un contenu base64 (C7 — mémoire) : 100 Mo. */
+    private const MAX_BASE64_BYTES = 100 * 1024 * 1024;
+
+    /**
+     * Valide l'extension d'un fichier. Retourne null si OK, sinon un message d'erreur.
+     */
+    public static function checkExtension(?string $extension): ?string
+    {
+        $ext = strtolower(trim((string) $extension));
+        if ($ext === '') {
+            return 'Extension du fichier manquante.';
+        }
+        if (!in_array($ext, self::ALLOWED_EXTENSIONS, true)) {
+            return 'Extension .' . $ext . ' non autorisée. Formats acceptés : ' . implode(', ', self::ALLOWED_EXTENSIONS) . '.';
+        }
+        return null;
+    }
 
     /**
      * Inspecte la requête pour tout fichier attaché (UploadedFile, tableau de fichiers, ou base64)
@@ -33,6 +63,20 @@ class CourrierFileService
         // 2. Récupérer les fichiers scannés (scan-preview) ou fichiers temporaires référencés
         $tempUploadedFiles = $this->extractTempFiles($request);
         $uploadedFiles = array_merge($uploadedFiles, $tempUploadedFiles);
+
+        // Sécurité (C7) : vérifier la whitelist des extensions AVANT tout stockage.
+        foreach ($uploadedFiles as $file) {
+            if ($file instanceof UploadedFile && $file->isValid()) {
+                $extToCheck = $file->getClientOriginalExtension() ?: $file->guessExtension();
+                if (($extError = self::checkExtension($extToCheck)) !== null) {
+                    Log::warning('CourrierFileService::handleRequestFiles — extension refusée', [
+                        'file' => $file->getClientOriginalName(),
+                        'ext' => $extToCheck,
+                    ]);
+                    throw ValidationException::withMessages(['file' => [$extError]]);
+                }
+            }
+        }
 
         foreach ($uploadedFiles as $file) {
             if ($file instanceof UploadedFile && $file->isValid()) {
@@ -131,14 +175,23 @@ class CourrierFileService
             if ($str === '' || str_starts_with($str, 'data:')) continue;
 
             $basename = basename(parse_url($str, PHP_URL_PATH) ?? $str);
+            if ($basename === '' || $basename === '.' || $basename === '..') continue;
 
-            $possiblePaths = [
-                storage_path('app/scan-preview/' . $basename),
-                storage_path('app/scan-preview/' . $str),
-                storage_path('app/upload_tmp/' . $basename),
-                storage_path('app/upload_tmp/' . $str),
-                storage_path('app/' . ltrim($str, '/')),
-            ];
+            // Sécurité (C1) : ne chercher le fichier QUE dans les zones temporaires
+            // connues (scan-preview, upload_tmp), avec un nom de fichier "plat"
+            // (basename uniquement) et validation realpath. Tout chemin hors de ces
+            // dossiers (ex. "../../.env") est ignoré.
+            $possiblePaths = [];
+            foreach ([
+                storage_path('app/scan-preview'),
+                storage_path('app/upload_tmp'),
+            ] as $baseDir) {
+                $candidate = $baseDir . DIRECTORY_SEPARATOR . $basename;
+                $resolved = $this->resolveSafePath($candidate, $baseDir);
+                if ($resolved !== null) {
+                    $possiblePaths[] = $resolved;
+                }
+            }
 
             foreach ($possiblePaths as $path) {
                 if (File::isFile($path) && !in_array($path, $processedPaths, true)) {
@@ -157,6 +210,26 @@ class CourrierFileService
         }
 
         return $tempFiles;
+    }
+
+    /**
+     * Sécurité (C1) : retourne le chemin réel s'il se trouve bien dans $baseDir,
+     * sinon null. Empêche les traversées de type "../../.env" et les symlinks sortants.
+     */
+    private function resolveSafePath(string $candidate, string $baseDir): ?string
+    {
+        if (str_contains($candidate, '..') || str_contains($candidate, '\\') || $candidate === '') {
+            return null;
+        }
+        $realCandidate = realpath($candidate);
+        $realBase = realpath($baseDir);
+        if ($realCandidate === false || $realBase === false) {
+            return null;
+        }
+        if (strpos($realCandidate, $realBase . DIRECTORY_SEPARATOR) !== 0) {
+            return null;
+        }
+        return $realCandidate;
     }
 
     /**
@@ -213,6 +286,17 @@ class CourrierFileService
     {
         $nom = $file->getClientOriginalName() ?: 'sans-nom';
         $extension = $file->getClientOriginalExtension() ?: $file->guessExtension() ?: 'bin';
+
+        // Sécurité (C7) : whitelist stricte des extensions (dernière barrière, tous chemins d'upload).
+        if (($extError = self::checkExtension($extension)) !== null) {
+            Log::warning('CourrierFileService::saveUploadedFile — extension refusée', [
+                'courrierId' => $courrierId,
+                'file' => $nom,
+                'ext' => $extension,
+            ]);
+            throw ValidationException::withMessages(['file' => [$extError]]);
+        }
+
         $dir = $courrierId . '/fichiers';
 
         $baseName = pathinfo($nom, PATHINFO_FILENAME);
@@ -278,6 +362,12 @@ class CourrierFileService
         if ($raw === false) {
             Log::warning('CourrierFileService::saveBase64File — base64 invalide');
             return null;
+        }
+
+        // Sécurité (C7) : plafond dur pour éviter l'épuisement mémoire (memory_limit).
+        if (strlen($raw) > self::MAX_BASE64_BYTES) {
+            Log::warning('CourrierFileService::saveBase64File — contenu trop volumineux (>100 Mo)');
+            throw ValidationException::withMessages(['file' => ['Le fichier ne doit pas dépasser 100 Mo.']]);
         }
 
         $tmpDir = storage_path('app/upload_tmp');

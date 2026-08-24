@@ -102,7 +102,7 @@ Route::middleware('auth:api')->group(function () {
     // Corrige le ModelNotFoundException sur /api/courriers/files-counts
     Route::get('courriers/files-counts', [CourrierController::class, 'filesCounts']);
 
-    // Mise à jour du statut uniquement (pas de vérification de permission complexe)
+    // Mise à jour du statut uniquement (garde-fous : permission + accès au courrier, cf. updateStatut())
     Route::patch('courriers/{id}/statut', [CourrierController::class, 'updateStatut']);
 
     // Courriers (apiResource : index, show, store, update, destroy)

@@ -334,6 +334,20 @@ class CourrierFichierController extends Controller
             $extension = $file->guessExtension();
         }
         $extension = $extension ? trim((string) $extension) : null;
+
+        // Sécurité (C7) : whitelist stricte des extensions, avant tout stockage.
+        if (($extError = \App\Services\CourrierFileService::checkExtension($extension)) !== null) {
+            Log::warning('CourrierFichierController::processAndSaveUploadedFile — extension refusée', [
+                'courrierId' => $courrierId,
+                'file' => $nom,
+                'ext' => $extension,
+            ]);
+            return response()->json([
+                'message' => 'Validation du fichier échouée.',
+                'errors' => ['file' => [$extError]],
+            ], 422);
+        }
+
         $parentId = $this->resolveParentId($request->input('parentId'), $courrierId);
 
         $dir = $courrierId . '/fichiers';

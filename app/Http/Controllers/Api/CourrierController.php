@@ -189,6 +189,18 @@ class CourrierController extends Controller
             'extraFields' => 'nullable|array',
         ]);
 
+        // Sécurité (C4) : normalisation du numéro — seuls les numéros officiels
+        // (INT/EXT-AAAA-NNNN) sont acceptés tels quels. Les numéros générés côté
+        // client (ex. INT-2026-<ms>-<aléatoire>) sont IGNORÉS : le système génère
+        // la séquence officielle. Compatibilité avec les anciens builds du frontend.
+        if (isset($validated['numero']) && !$this->isOfficialNumeroFormat($validated['numero'])) {
+            Log::warning('CourrierController::store — numéro client non conforme ignoré, le système génère le sien', [
+                'numero' => $validated['numero'],
+                'user_id' => $user?->id,
+            ]);
+            unset($validated['numero']);
+        }
+
         if (($restrictionError = $this->validateOrganisationManagerPayload($user, $validated)) !== null) {
             return $restrictionError;
         }
@@ -285,7 +297,7 @@ class CourrierController extends Controller
 
         $validated = $request->validate([
             'courriers' => 'required|array',
-            'courriers.*.numero' => 'nullable|string|max:64',
+                'courriers.*.numero' => 'nullable|string|max:64',
             'courriers.*.type' => 'required|in:INTERNE,EXTERNE',
             'courriers.*.sens' => 'nullable|string|in:ENTRANT,SORTANT',
             'courriers.*.dateReception' => 'required|date',
@@ -303,6 +315,17 @@ class CourrierController extends Controller
         ]);
 
         $items = $validated['courriers'];
+
+        // Sécurité (C4) : normalisation des numéros du lot (mêmes règles que store()).
+        foreach ($items as $idx => $item) {
+            if (isset($item['numero']) && !$this->isOfficialNumeroFormat($item['numero'])) {
+                Log::warning('CourrierController::bulkStore — numéro client non conforme ignoré', [
+                    'index' => $idx,
+                    'numero' => $item['numero'],
+                ]);
+                unset($items[$idx]['numero']);
+            }
+        }
         foreach ($items as $item) {
             if (($restrictionError = $this->validateOrganisationManagerPayload($user, $item)) !== null) {
                 return $restrictionError;
@@ -429,6 +452,18 @@ class CourrierController extends Controller
                 'fichier' => 'nullable|string',
                 'extraFields' => 'nullable|array',
             ]);
+
+            // Sécurité (C4) : ne jamais laisser modifier le numéro vers un format non
+            // officiel (ex. numéro généré côté client). Le numéro d'origine est conservé.
+            if (isset($validated['numero']) && $validated['numero'] !== $courrier->numero
+                && !$this->isOfficialNumeroFormat($validated['numero'])) {
+                Log::warning('CourrierController::update — modification de numéro non conforme ignorée', [
+                    'courrier_id' => $id,
+                    'numero_envoye' => $validated['numero'],
+                ]);
+                unset($validated['numero']);
+            }
+
             $candidate = array_merge([
                 'type' => $courrier->type,
                 'sens' => $courrier->sens,
@@ -470,6 +505,10 @@ class CourrierController extends Controller
         $type = in_array($input['type'] ?? null, ['INTERNE', 'EXTERNE']) ? ($input['type'] ?? 'EXTERNE') : 'EXTERNE';
         $sens = in_array($input['sens'] ?? null, ['ENTRANT', 'SORTANT']) ? ($input['sens'] ?? null) : null;
         $numero = isset($input['numero']) && trim((string) $input['numero']) !== '' ? trim((string) $input['numero']) : null;
+        if ($numero !== null && !$this->isOfficialNumeroFormat($numero)) {
+            Log::warning('CourrierController::update (create) — numéro client non conforme ignoré', ['numero' => $numero]);
+            $numero = null;
+        }
         $dateReception = isset($input['dateReception']) && $input['dateReception']
             ? (is_string($input['dateReception']) ? \Carbon\Carbon::parse($input['dateReception']) : $input['dateReception'])
             : now();
@@ -570,6 +609,18 @@ class CourrierController extends Controller
             return response()->json(['message' => 'Courrier non trouvé'], 404);
         }
 
+        // Sécurité (C2) : même garde-fou que update() — l'utilisateur doit disposer
+        // de la permission et du droit d'accès sur CE courrier.
+        $this->authorize('modifier-courrier');
+        if (!$this->accessService->canUpdateCourrier($user, $courrier)) {
+            Log::warning('[updateStatut] Modification refusée (accès)', [
+                'courrier_id' => $id,
+                'user_id' => $user?->id,
+                'statut_avant' => $courrier->statut,
+            ]);
+            return response()->json(['message' => 'Modification du statut non autorisée pour ce courrier.'], 403);
+        }
+
         Log::info('[updateStatut] Courrier trouvé', ['statut_avant' => $courrier->statut]);
 
         $validated = $request->validate([
@@ -621,6 +672,24 @@ class CourrierController extends Controller
         }
         // Les clés avec filtres (hash non vide) expirent naturellement après 30s (TTL Cache::remember).
         // Pour une invalidation complète immédiate avec Redis, utiliser Cache::tags(['courriers'])->flush().
+    }
+
+    /**
+     * Sécurité (C4) : le seul format de numéro accepté comme valeur explicite est la
+     * séquence officielle INT/EXT-AAAA-NNNN (générée par generateNumero()). Les valeurs
+     * vides/null sont acceptées (le système génère). Tout le reste — notamment les
+     * numéros générés côté client (INT-2026-<ms>-<aléatoire>) — est rejeté.
+     */
+    private function isOfficialNumeroFormat(?string $numero): bool
+    {
+        if ($numero === null) {
+            return true;
+        }
+        $numero = trim($numero);
+        if ($numero === '') {
+            return true;
+        }
+        return (bool) preg_match('/^(INT|EXT)-\d{4}-\d{4}$/', $numero);
     }
 
     private function generateNumero(string $type): string
