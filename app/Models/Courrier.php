@@ -35,6 +35,7 @@ class Courrier extends Model
     protected $fillable = [
         'id', // pour sync Firestore → MySQL (création avec ID existant)
         'numero',
+        'client_request_id', // (C3) idempotence anti-doublons — DOIT être fillable, sinon l'insertion est silencieusement ignorée
         'type',
         'sens', // ENTRANT, SORTANT — formulaire courrier
         'date_reception',
@@ -66,6 +67,7 @@ class Courrier extends Model
         return [
             'id' => $arr['id'],
             'numero' => $arr['numero'],
+            'clientRequestId' => $arr['client_request_id'] ?? null,
             'type' => $arr['type'],
             'sens' => $arr['sens'] ?? null,
             'dateReception' => $this->date_reception?->format('c'),

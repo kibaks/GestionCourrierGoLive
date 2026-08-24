@@ -167,12 +167,45 @@ class WorkflowEtapesController extends Controller
      */
     public function update(Request $request, string $id): JsonResponse
     {
-        $this->authorize('modifier-workflow');
         $user = Auth::user();
 
         $etape = WorkflowEtape::with('courrier')->findOrFail($id);
-        if (!$this->accessService->canUpdateCourrier($user, $etape->courrier)) {
-            return response()->json(['message' => 'Non autorisé'], 403);
+        $courrier = $etape->courrier;
+
+        // M3 (25/08/2026) : l'ASSIGNÉ de l'étape peut lui-même la faire avancer
+        // (Démarrer / Terminer / Rejeter) — aucun rôle de la table roles ne détient
+        // « modifier-workflow » en prod, donc sans cette exception le workflow était
+        // bloqué (403 sur Démarrer/Terminer).
+        // L'assignation de l'étape est elle-même l'autorisation : elle n'est pas
+        // une ligne `Assignation` du courrier, et un assigné peut appartenir à un
+        // service différent de celui du courrier (visas croisés) — aucun contrôle
+        // d'accès au courrier n'est exigé ici. La réponse ne renvoie que les champs
+        // de l'étape (cf. WorkflowEtape::toArray), pas le contenu du courrier.
+        // Toute autre opération (re-assignation, renommage, réordonnancement) reste
+        // réservée aux détenteurs de « modifier-workflow » + canUpdateCourrier.
+        $isAssignee = (string) ($etape->assigne_a ?? '') === (string) $user->id;
+        $statutRequis = $request->input('statut');
+        $isOwnStatusTransition = $isAssignee
+            && is_string($statutRequis)
+            && in_array($statutRequis, ['EN_COURS', 'TERMINE', 'REJETE'], true)
+            && !$request->filled('assigneA')
+            && !$request->filled('etape')
+            && !$request->filled('ordre');
+
+        if ($isOwnStatusTransition) {
+            $allowedTransitions = match ($etape->statut) {
+                'EN_ATTENTE' => ['EN_COURS', 'TERMINE', 'REJETE'],
+                'EN_COURS' => ['TERMINE', 'REJETE'],
+                default => [],
+            };
+            if (!in_array($statutRequis, $allowedTransitions, true)) {
+                return response()->json(['message' => 'Transition de statut non autorisée'], 422);
+            }
+        } else {
+            $this->authorize('modifier-workflow');
+            if (!$this->accessService->canUpdateCourrier($user, $courrier)) {
+                return response()->json(['message' => 'Non autorisé'], 403);
+            }
         }
 
         $validated = $request->validate([

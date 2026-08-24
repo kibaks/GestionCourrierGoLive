@@ -56,12 +56,14 @@ Route::post('auth/forgot-password', [PasswordResetController::class, 'requestRes
 Route::post('auth/reset-password', [PasswordResetController::class, 'reset'])->middleware('throttle:5,1');
 Route::post('profile/confirm-email', [ProfileController::class, 'confirmEmailChange'])->middleware('throttle:5,1');
 Route::post('auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
+// M5 : refresh est PUBLIQUE (pas de middleware auth:api) — le token à rafraîchir
+// est souvent expiré ; la signature est vérifiée dans le contrôleur (grace 24 h).
+Route::post('auth/refresh', [AuthController::class, 'refresh'])->middleware('throttle:10,1');
 
 // ----- Toutes les routes suivantes protégées JWT -----
 Route::middleware('auth:api')->group(function () {
     Route::get('auth/me', [AuthController::class, 'me']);
     Route::get('auth/permissions', [AuthController::class, 'permissions']);
-    Route::post('auth/refresh', [AuthController::class, 'refresh']);
     Route::post('auth/logout', [AuthController::class, 'logout']);
     Route::get('profile', [ProfileController::class, 'show']);
     Route::put('profile', [ProfileController::class, 'update']);

@@ -187,7 +187,25 @@ class CourrierController extends Controller
             'fileBase64' => 'nullable|string',
             'fileName' => 'nullable|string',
             'extraFields' => 'nullable|array',
+            'clientRequestId' => 'nullable|string|max:64',
         ]);
+
+        // Idempotence (C3) : replay d'une requête déjà traitée (retry réseau,
+        // double clic, replay du fallback front) → renvoyer le courrier existant.
+        $clientRequestId = $validated['clientRequestId'] ?? null;
+        if ($clientRequestId) {
+            $existing = Courrier::where('client_request_id', $clientRequestId)->first();
+            if ($existing) {
+                Log::info('CourrierController::store — replay idempotent (clientRequestId déjà traité)', [
+                    'client_request_id' => $clientRequestId,
+                    'courrier_id' => $existing->id,
+                ]);
+                return response()->json([
+                    'data' => $existing->toArray(),
+                    'idempotentReplay' => true,
+                ], 200);
+            }
+        }
 
         // Sécurité (C4) : normalisation du numéro — seuls les numéros officiels
         // (INT/EXT-AAAA-NNNN) sont acceptés tels quels. Les numéros générés côté
@@ -216,10 +234,11 @@ class CourrierController extends Controller
             try {
                 // Tout dans UNE SEULE transaction : génération du numéro + insertion
                 // Le lockForUpdate est maintenu jusqu'à l'insert, empêchant les doublons
-                $courrier = DB::transaction(function () use ($validated, $dateEnregistrement, $enregistrePar) {
+                $courrier = DB::transaction(function () use ($validated, $dateEnregistrement, $enregistrePar, $clientRequestId) {
                     $numero = $validated['numero'] ?? $this->generateNumero($validated['type']);
                     return Courrier::create([
                         'numero' => $numero,
+                        'client_request_id' => $clientRequestId,
                         'type' => $validated['type'],
                         'sens' => $validated['sens'] ?? null,
                         'date_reception' => $validated['dateReception'],
@@ -241,13 +260,28 @@ class CourrierController extends Controller
                 $code = $e->getCode();
                 $msg = $e->getMessage();
                 $isDuplicate = $code === '23000' || str_contains($msg, 'Duplicate entry') || str_contains($msg, 'UNIQUE');
-                if ($isDuplicate && $attempt < $maxAttempts - 1 && ! isset($validated['numero'])) {
-                    $attempt++;
-                    usleep(rand(50000, 200000));
-                    Log::info('CourrierController::store — doublon détecté, nouvel essai', ['attempt' => $attempt]);
-                    continue;
-                }
                 if ($isDuplicate) {
+                    // Idempotence (C3) : doublon (souvent sur client_request_id lors d'un
+                    // double submit concurrent) → renvoyer le courrier déjà créé.
+                    if ($clientRequestId) {
+                        $existing = Courrier::where('client_request_id', $clientRequestId)->first();
+                        if ($existing) {
+                            Log::info('CourrierController::store — doublon résolu par replay idempotent', [
+                                'client_request_id' => $clientRequestId,
+                                'courrier_id' => $existing->id,
+                            ]);
+                            return response()->json([
+                                'data' => $existing->toArray(),
+                                'idempotentReplay' => true,
+                            ], 200);
+                        }
+                    }
+                    if ($attempt < $maxAttempts - 1 && ! isset($validated['numero'])) {
+                        $attempt++;
+                        usleep(rand(50000, 200000));
+                        Log::info('CourrierController::store — doublon détecté, nouvel essai', ['attempt' => $attempt]);
+                        continue;
+                    }
                     Log::warning('CourrierController::store — numéro déjà existant', ['attempt' => $attempt]);
                     return response()->json([
                         'message' => 'Un courrier avec ce numéro existe déjà.',
@@ -312,6 +346,7 @@ class CourrierController extends Controller
             'courriers.*.service' => 'nullable|string|max:255',
             'courriers.*.fichier' => 'nullable|string',
             'courriers.*.extraFields' => 'nullable|array',
+            'courriers.*.clientRequestId' => 'nullable|string|max:64',
         ]);
 
         $items = $validated['courriers'];
@@ -340,10 +375,24 @@ class CourrierController extends Controller
 
         $created = [];
         $enregistrePar = $user->id;
+        $bulkAttempt = 0;
+        $maxBulkAttempts = 3;
 
-        try {
+        while (true) {
+            $created = [];
+            try {
             \Illuminate\Support\Facades\DB::transaction(function () use ($items, $enregistrePar, &$created) {
                 foreach ($items as $item) {
+                    // Idempotence (C3) : item déjà créé (replay du lot) → on le renvoie tel quel.
+                    $clientRequestId = $item['clientRequestId'] ?? null;
+                    if ($clientRequestId) {
+                        $existing = Courrier::where('client_request_id', $clientRequestId)->first();
+                        if ($existing) {
+                            $created[] = $existing;
+                            continue;
+                        }
+                    }
+
                     $numero = $item['numero'] ?? $this->generateNumero($item['type']);
                     $dateEnregistrement = isset($item['dateEnregistrement'])
                         ? $item['dateEnregistrement']
@@ -352,6 +401,7 @@ class CourrierController extends Controller
 
                     $courrier = Courrier::create([
                         'numero' => $numero,
+                        'client_request_id' => $clientRequestId,
                         'type' => $item['type'],
                         'sens' => $item['sens'] ?? null,
                         'date_reception' => $item['dateReception'],
@@ -370,8 +420,19 @@ class CourrierController extends Controller
                     $created[] = $courrier;
                 }
             });
-        } catch (QueryException $e) {
+            break;
+            } catch (QueryException $e) {
             $msg = $e->getMessage();
+            // C3 — course concurrente : un appel simultané (double soumission du
+            // même lot) a créé un courrier du lot pendant que celui-ci se
+            // traitait. On rejoue le lot : les items déjà créés sont détectés
+            // par clientRequestId au pré-check et renvoyés sans recréation.
+            if (str_contains($msg, 'client_request_id') && $bulkAttempt < $maxBulkAttempts - 1) {
+                $bulkAttempt++;
+                usleep(rand(50000, 200000));
+                Log::info('CourrierController::bulkStore — collision client_request_id, rejeu du lot', ['attempt' => $bulkAttempt]);
+                continue;
+            }
             if ($e->getCode() === '23000' || str_contains($msg, 'Duplicate entry') || str_contains($msg, 'UNIQUE')) {
                 Log::warning('CourrierController::bulkStore — numéro déjà existant', ['message' => $msg]);
                 return response()->json([
@@ -388,6 +449,7 @@ class CourrierController extends Controller
             return response()->json([
                 'message' => config('app.debug') ? $e->getMessage() : 'Erreur lors de l\'import en lot.',
             ], 500);
+            }
         }
 
         $this->clearCourrierCache($user);
