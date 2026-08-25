@@ -19,10 +19,21 @@ class Annotation extends Model
         'type',
         'workflow_etape_id',
         'fichiers',
+        // P1 — annotations sur le document
+        'fichier_id',
+        'fichier_nom',
+        'page',
+        'position',
+        'kind',
+        'parent_id',
+        'statut',
+        'decision',
     ];
 
     protected $casts = [
         'fichiers' => 'array',
+        'position' => 'array',
+        'page' => 'integer',
     ];
 
     public function courrier(): BelongsTo
@@ -43,6 +54,15 @@ class Annotation extends Model
             'dateCreation' => $this->created_at?->format('c'),
             'workflowEtapeId' => $arr['workflow_etape_id'] ?? null,
             'fichiers' => $arr['fichiers'] ?? null,
+            // P1 — annotations sur le document
+            'fichierId' => $arr['fichier_id'] ?? null,
+            'fichierNom' => $arr['fichier_nom'] ?? null,
+            'page' => $arr['page'] !== null ? (int) $arr['page'] : null,
+            'position' => $arr['position'] ?? null,
+            'kind' => $arr['kind'] ?? 'COMMENTAIRE',
+            'parentId' => $arr['parent_id'] ?? null,
+            'statut' => $arr['statut'] ?? 'OUVERT',
+            'decision' => $arr['decision'] ?? null,
         ];
     }
 }

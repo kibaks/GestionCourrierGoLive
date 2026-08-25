@@ -134,6 +134,8 @@ Route::middleware('auth:api')->group(function () {
     // Annotations
     Route::get('annotations/courrier-ids', [AnnotationsController::class, 'courrierIds']); // avant les routes spécifiques
     Route::post('annotations', [AnnotationsController::class, 'store']);
+    Route::patch('annotations/{id}', [AnnotationsController::class, 'update']);   // P1 : modifier (auteur ou DG)
+    Route::delete('annotations/{id}', [AnnotationsController::class, 'destroy']); // P1 : supprimer (auteur ou DG)
 
     // Workflow étapes
     Route::get('workflow-etapes/courrier-ids', [WorkflowEtapesController::class, 'courrierIds']); // avant {id}
