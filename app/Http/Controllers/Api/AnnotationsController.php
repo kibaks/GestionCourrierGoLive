@@ -39,6 +39,73 @@ class AnnotationsController extends Controller
     }
 
     /**
+     * P3a — Boîte « Courriers à annoter » du DG.
+     * Courriers accessibles (DG : orientés + enregistrés ; SUPER_ADMIN : tous) qui ont :
+     *  (a) des étapes non terminées assignées à l'utilisateur, ou
+     *  (b) des annotations OUVERTES déposées par d'autres acteurs.
+     * GET /api/annotations/dg-inbox  (DG / SUPER_ADMIN uniquement)
+     */
+    public function dgInbox(): JsonResponse
+    {
+        $this->authorize('voir-courriers');
+        $user = Auth::user();
+        if (!in_array($user->role, ['DIRECTEUR_GENERAL', 'SUPER_ADMIN'], true)) {
+            return response()->json(['message' => 'Réservé au Directeur Général'], 403);
+        }
+
+        $courriers = $this->accessService->getAccessibleCourriersQuery($user)
+            ->get(['id', 'numero', 'objet', 'type', 'sens', 'priorite', 'statut', 'date_enregistrement']);
+        if ($courriers->isEmpty()) {
+            return response()->json(['data' => []]);
+        }
+
+        $ids = $courriers->pluck('id')->all();
+
+        $steps = WorkflowEtape::whereIn('courrier_id', $ids)
+            ->whereNotIn('statut', ['TERMINE', 'REJETE'])
+            ->get(['courrier_id', 'assigne_a', 'created_at']);
+
+        $openAnn = Annotation::whereIn('courrier_id', $ids)
+            ->where('statut', 'OUVERT')
+            ->whereNull('parent_id')
+            ->get(['courrier_id', 'created_by', 'decision', 'created_at']);
+
+        $items = [];
+        foreach ($courriers as $c) {
+            $mySteps = $steps->where('courrier_id', $c->id)
+                ->where('assigne_a', (string) $user->id)
+                ->values();
+            $othersOpen = $openAnn->where('courrier_id', $c->id)
+                ->reject(fn (Annotation $a) => (string) $a->created_by === (string) $user->id)
+                ->values();
+            if ($mySteps->isEmpty() && $othersOpen->isEmpty()) {
+                continue;
+            }
+            $last = collect()
+                ->merge($mySteps->pluck('created_at'))
+                ->merge($othersOpen->pluck('created_at'))
+                ->filter()
+                ->max();
+            $items[] = [
+                'id' => $c->id,
+                'numero' => $c->numero,
+                'objet' => $c->objet,
+                'type' => $c->type,
+                'sens' => $c->sens,
+                'priorite' => $c->priorite,
+                'statut' => $c->statut,
+                'date_enregistrement' => $c->date_enregistrement,
+                'nb_etapes_a_traiter' => $mySteps->count(),
+                'nb_avis_a_traiter' => $othersOpen->count(),
+                'derniere_activite' => $last,
+            ];
+        }
+        usort($items, fn ($a, $b) => strcmp((string) ($b['derniere_activite'] ?? ''), (string) ($a['derniere_activite'] ?? '')));
+
+        return response()->json(['data' => $items]);
+    }
+
+    /**
      * IDs de courriers ayant au moins une annotation écrite par un auteur ou une direction donnée.
      * GET /api/annotations/courrier-ids?auteur={userId}
      * GET /api/annotations/courrier-ids?direction={direction}

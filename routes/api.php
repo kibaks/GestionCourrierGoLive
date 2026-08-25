@@ -132,6 +132,7 @@ Route::middleware('auth:api')->group(function () {
     Route::delete('assignations/{id}', [AssignationsController::class, 'destroy']);
 
     // Annotations
+    Route::get('annotations/dg-inbox', [AnnotationsController::class, 'dgInbox']); // P3a : boîte DG (avant les routes spécifiques)
     Route::get('annotations/courrier-ids', [AnnotationsController::class, 'courrierIds']); // avant les routes spécifiques
     Route::post('annotations', [AnnotationsController::class, 'store']);
     Route::patch('annotations/{id}', [AnnotationsController::class, 'update']);   // P1 : modifier (auteur ou DG)
