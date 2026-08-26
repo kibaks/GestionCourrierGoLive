@@ -244,7 +244,80 @@ class AnnotationsController extends Controller
             $this->notifyDocumentAnnotation($courrier, $annotation, $user);
         }
 
+        // P4 — annotation DG / SUPER_ADMIN posée au niveau du document ou du courrier
+        // (pas sur une étape) : création DIRECTE de l'étape correspondante, à traiter
+        // par l'enregistreur du courrier (ou réutilisation de l'étape DG auto ouverte).
+        if (
+            in_array($user->role, ['DIRECTEUR_GENERAL', 'SUPER_ADMIN'], true)
+            && empty($validated['workflowEtapeId'])
+            && empty($validated['parentId'])
+            && !empty($courrier->enregistre_par)
+            && (string) $courrier->enregistre_par !== (string) $user->id
+        ) {
+            $step = $this->attachOrCreateDgStep($courrier, $annotation, $user);
+            if ($step) {
+                $annotation->workflow_etape_id = $step->id;
+                $annotation->save();
+            }
+        }
+
         return response()->json(['data' => $annotation->toArray()], 201);
+    }
+
+    /**
+     * P4 — Crée (ou réutilise) l'étape « annotation du DG » du courrier.
+     * Marqueur : commentaire = 'auto_dg_annotation'.
+     * Si une étape DG auto est déjà OUVERTE sur le courrier (série de traits de stylo,
+     * tampons et textes posés sur le même dossier), on la RÉUTILISE au lieu d'en
+     * créer une nouvelle à chaque annotation.
+     */
+    private function attachOrCreateDgStep(Courrier $courrier, Annotation $annotation, User $author): ?WorkflowEtape
+    {
+        $existing = WorkflowEtape::where('courrier_id', $courrier->id)
+            ->where('commentaire', 'auto_dg_annotation')
+            ->whereNotIn('statut', ['TERMINE', 'REJETE'])
+            ->orderBy('created_at')
+            ->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        $label = ($annotation->decision === 'A_REVOIR')
+            ? 'Correction demandée par le DG'
+            : 'Avis DG — à prendre en compte';
+
+        $etape = WorkflowEtape::create([
+            'courrier_id' => $courrier->id,
+            'etape' => $label,
+            'assigne_a' => $courrier->enregistre_par,
+            'statut' => 'EN_ATTENTE',
+            'commentaire' => 'auto_dg_annotation',
+            'cree_par' => $author->id,
+            'duree_estimee' => 48,
+            'declencheur' => ['type' => 'IMMEDIAT'],
+        ]);
+
+        // Notification haute priorité à l'assigné de l'étape
+        try {
+            Notification::create([
+                'userId' => $courrier->enregistre_par,
+                'type' => 'workflow',
+                'title' => "Nouvelle étape à traiter — {$courrier->numero}",
+                'message' => "Étape « {$label} » créée automatiquement après l'annotation du DG ({$author->name}) sur « {$courrier->objet} ».",
+                'priority' => 'high',
+                'read' => false,
+                'relatedId' => $courrier->id,
+                'relatedType' => 'courrier',
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('P4 : notification de l\'étape DG automatique échouée', [
+                'courrier_id' => $courrier->id,
+                'etape_id' => $etape->id,
+                'erreur' => $e->getMessage(),
+            ]);
+        }
+
+        return $etape;
     }
 
     /**
