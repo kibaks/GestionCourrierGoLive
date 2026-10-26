@@ -62,10 +62,23 @@ Route::post('auth/refresh', [AuthController::class, 'refresh'])->middleware('thr
 
 // ----- Toutes les routes suivantes protégées JWT -----
 Route::middleware('auth:api')->group(function () {
+    Route::get('workspace/courriers', [\App\Http\Controllers\Api\WorkspaceController::class, 'index']);
+    Route::get('workspace/draft', [\App\Http\Controllers\Api\DraftController::class, 'show']);
+    Route::put('workspace/draft', [\App\Http\Controllers\Api\DraftController::class, 'save'])->middleware('throttle:20,1');
+    Route::delete('workspace/draft', [\App\Http\Controllers\Api\DraftController::class, 'destroy']);
+    Route::get('numbering/settings', [\App\Http\Controllers\Api\NumberingController::class, 'show']);
+    Route::put('numbering/settings', [\App\Http\Controllers\Api\NumberingController::class, 'save']);
+    Route::get('numbering/options', [\App\Http\Controllers\Api\NumberingController::class, 'options']);
+    Route::post('numbering/preview', [\App\Http\Controllers\Api\NumberingController::class, 'preview']);
     Route::get('auth/me', [AuthController::class, 'me']);
     Route::get('auth/permissions', [AuthController::class, 'permissions']);
     Route::post('auth/logout', [AuthController::class, 'logout']);
     Route::get('profile', [ProfileController::class, 'show']);
+    Route::get('communications', [\App\Http\Controllers\Api\CommunicationController::class, 'show']);
+    Route::get('communications/deliveries', [\App\Http\Controllers\Api\CommunicationController::class, 'deliveries']);
+    Route::get('workspace/audit', [\App\Http\Controllers\Api\CommunicationController::class, 'audit']);
+    Route::get('workspace/system', [\App\Http\Controllers\Api\CommunicationController::class, 'system']);
+    Route::put('communications', [\App\Http\Controllers\Api\CommunicationController::class, 'update']);
     Route::put('profile', [ProfileController::class, 'update']);
     Route::post('profile/photo', [ProfileController::class, 'photo'])->middleware('throttle:10,1');
     Route::post('profile/cover', [ProfileController::class, 'cover'])->middleware('throttle:10,1');
@@ -152,7 +165,7 @@ Route::middleware('auth:api')->group(function () {
 
     // Notifications — routes statiques AVANT les routes paramétrées ({id})
     Route::get('notifications', [NotificationsController::class, 'index']);
-    Route::post('notifications', [NotificationsController::class, 'store']);
+    Route::post('notifications', [NotificationsController::class, 'store'])->middleware('throttle:20,1');
     Route::get('notifications/unread-count', [NotificationsController::class, 'unreadCount']);
     Route::post('notifications/mark-all-read', [NotificationsController::class, 'markAllAsRead']);
     Route::post('notifications/{id}/mark-read', [NotificationsController::class, 'markAsRead']);

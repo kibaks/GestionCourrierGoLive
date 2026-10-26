@@ -46,7 +46,7 @@ class CourrierFichierController extends Controller
         $config = Config::getValue('courrier_fichier', ['maxSizeMo' => 100, 'compressImages' => true]);
         return response()->json([
             'data' => [
-                'maxSizeMo' => isset($config['maxSizeMo']) && is_numeric($config['maxSizeMo']) ? (int) $config['maxSizeMo'] : 100,
+                'maxSizeMo' => $this->effectiveLimitMb((int) ($config['maxSizeMo'] ?? 100)),
                 'compressImages' => (bool) ($config['compressImages'] ?? true),
             ],
         ]);
@@ -211,6 +211,8 @@ class CourrierFichierController extends Controller
             File::makeDirectory($tmpDir, 0755, true);
         }
 
+        $base64Limit=$this->effectiveLimitMb((int)(Config::getValue('courrier_fichier',[])['maxSizeMo']??100));
+        if (strlen($request->input('fileBase64')) > (int)ceil($base64Limit*1024*1024*4/3)+4) return response()->json(['message'=>'Le fichier dépasse la limite effective du serveur.'],422);
         $raw = base64_decode($request->input('fileBase64'), true);
         if ($raw === false) {
             return response()->json(['message' => 'Contenu fichier base64 invalide.'], 422);
@@ -228,6 +230,7 @@ class CourrierFichierController extends Controller
         $maxSizeMo = isset($importConfig['maxSizeMo']) && is_numeric($importConfig['maxSizeMo'])
             ? (int) $importConfig['maxSizeMo']
             : 100;
+        $maxSizeMo = $this->effectiveLimitMb($maxSizeMo);
         $maxSizeBytes = $maxSizeMo * 1024 * 1024;
         if (strlen($raw) > $maxSizeBytes) {
             @unlink($tmpPath);
@@ -262,6 +265,7 @@ class CourrierFichierController extends Controller
         $maxSizeMo = isset($importConfig['maxSizeMo']) && is_numeric($importConfig['maxSizeMo'])
             ? (int) $importConfig['maxSizeMo']
             : 100;
+        $maxSizeMo = $this->effectiveLimitMb($maxSizeMo);
         $maxSizeKb = $maxSizeMo * 1024;
 
         // ── Détection anticipée des erreurs PHP d'upload (avant la validation Laravel) ──
@@ -551,4 +555,16 @@ class CourrierFichierController extends Controller
             $child->delete();
         }
     }
+    private function effectiveLimitMb(int $requested): int
+    {
+        $bytes = static function(string $value): int {
+            $value=trim($value); if ((int)$value<=0) return PHP_INT_MAX;
+            $factor=match(strtolower(substr($value,-1))) {'g'=>1073741824,'m'=>1048576,'k'=>1024,default=>1};
+            return (int)$value*$factor;
+        };
+        $upload=$bytes(ini_get('upload_max_filesize'));
+        $post=$bytes(ini_get('post_max_size'));
+        return max(1,(int)floor(min(max(1,$requested)*1048576,$upload,max(1048576,$post-1048576))/1048576));
+    }
+
 }

@@ -39,7 +39,7 @@ class RolesController extends Controller
             'code' => 'required|string|max:32|unique:roles,code',
             'description' => 'nullable|string',
             'permissions' => 'nullable|array',
-            'permissions.*' => 'string',
+            'permissions.*' => ['string', \Illuminate\Validation\Rule::in(\App\Permissions\Permission::all())],
         ]);
         $item = RoleDefinition::create($validated);
         return response()->json(['data' => $item->toArray()], 201);
@@ -54,9 +54,11 @@ class RolesController extends Controller
             'code' => 'sometimes|string|max:32|unique:roles,code,' . $id,
             'description' => 'nullable|string',
             'permissions' => 'nullable|array',
-            'permissions.*' => 'string',
+            'permissions.*' => ['string', \Illuminate\Validation\Rule::in(\App\Permissions\Permission::all())],
         ]);
+        $oldCode=$item->code;
         $item->update($validated);
+        $this->permissionService->clearRoleCache($oldCode);
         $this->permissionService->clearRoleCache($item->code);
         return response()->json(['data' => $item->fresh()->toArray()]);
     }

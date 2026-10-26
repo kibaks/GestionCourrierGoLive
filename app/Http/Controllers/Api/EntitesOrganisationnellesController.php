@@ -44,7 +44,7 @@ class EntitesOrganisationnellesController extends Controller
         $this->authorize('creer-departement');
         $validated = $request->validate([
             'nom' => 'required|string|max:255',
-            'type' => 'required|string|in:direction_generale,direction,division,service,sous-service,bureau,cellule',
+            'type' => 'required|string|exists:entite_type_definitions,code',
             'description' => 'nullable|string',
             'courrierRoles' => 'nullable|array|max:16',
             'courrierRoles.*' => 'string|in:RECEPTION,ENREGISTREMENT,DIFFUSION,TRAITEMENT,REPONSE,SIGNATURE,EXPEDITION,ARCHIVAGE',
@@ -73,7 +73,7 @@ class EntitesOrganisationnellesController extends Controller
         $item = EntiteOrganisationnelle::findOrFail($id);
         $validated = $request->validate([
             'nom' => 'sometimes|string|max:255',
-            'type' => 'sometimes|string|in:direction_generale,direction,division,service,sous-service,bureau,cellule',
+            'type' => 'sometimes|string|exists:entite_type_definitions,code',
             'description' => 'nullable|string',
             'courrierRoles' => 'nullable|array|max:16',
             'courrierRoles.*' => 'string|in:RECEPTION,ENREGISTREMENT,DIFFUSION,TRAITEMENT,REPONSE,SIGNATURE,EXPEDITION,ARCHIVAGE',

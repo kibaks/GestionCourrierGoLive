@@ -33,6 +33,7 @@ class EntiteOrganisationnelle extends Model
         return [
             'id' => $arr['id'],
             'nom' => $arr['nom'],
+            'code' => $arr['code'] ?? null,
             'type' => $arr['type'],
             'description' => $arr['description'] ?? null,
             'courrierRoles' => $arr['courrier_roles'] ?? null,

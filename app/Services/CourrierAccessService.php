@@ -32,7 +32,7 @@ class CourrierAccessService
             if (!$user->direction) {
                 return $query;
             }
-            $assigneAIds = Assignation::where('assigne_a', $user->id)->pluck('courrier_id')->toArray();
+            $assigneAIds = Assignation::where('assigne_a', $user->id)->select('courrier_id');
             $query->where(function (Builder $q) use ($user, $assigneAIds) {
                 $q->whereIn('id', $assigneAIds)
                   ->orWhere('enregistre_par', $user->id)
@@ -43,7 +43,7 @@ class CourrierAccessService
 
         // DG : courriers orientés (assignés) + courriers qu'il a enregistrés
         if ($user->isDirecteurGeneral()) {
-            $assigneAIds = Assignation::where('assigne_a', $user->id)->pluck('courrier_id')->toArray();
+            $assigneAIds = Assignation::where('assigne_a', $user->id)->select('courrier_id');
             $query->where(function (Builder $q) use ($user, $assigneAIds) {
                 $q->whereIn('id', $assigneAIds)
                   ->orWhere('enregistre_par', $user->id);
@@ -53,7 +53,7 @@ class CourrierAccessService
 
         // DIRECTEUR / CHEF_DIVISION : courriers orientés (assignés) + courriers enregistrés + courriers de leur direction
         if ($user->isDirecteur() || $user->isChefDivision()) {
-            $assigneAIds = Assignation::where('assigne_a', $user->id)->pluck('courrier_id')->toArray();
+            $assigneAIds = Assignation::where('assigne_a', $user->id)->select('courrier_id');
             $query->where(function (Builder $q) use ($user, $assigneAIds) {
                 $q->whereIn('id', $assigneAIds)
                   ->orWhere('enregistre_par', $user->id);
@@ -64,7 +64,7 @@ class CourrierAccessService
             return $query;
         }
 
-        $assigneAIds = Assignation::where('assigne_a', $user->id)->pluck('courrier_id')->toArray();
+        $assigneAIds = Assignation::where('assigne_a', $user->id)->select('courrier_id');
 
         $query->where(function (Builder $q) use ($user, $assigneAIds) {
             $q->whereIn('id', $assigneAIds)
