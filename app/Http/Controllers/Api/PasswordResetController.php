@@ -15,6 +15,7 @@ class PasswordResetController extends Controller
     public function requestReset(Request $request): JsonResponse
     {
         $request->validate(['email' => 'required|email']);
+        if (!\App\Services\CommunicationSettings::configureMail()) return response()->json(['message' => 'La messagerie doit être activée par un administrateur.'], 422);
         $status = Password::sendResetLink($request->only('email'));
 
         return response()->json([

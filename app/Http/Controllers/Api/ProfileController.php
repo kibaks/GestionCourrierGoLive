@@ -39,6 +39,11 @@ class ProfileController extends Controller
             'country' => 'nullable|string|max:100',
             'profileVisibility' => 'nullable|array',
             'notificationPreferences' => 'nullable|array',
+            'notificationPreferences.*' => 'array:app,email,sms,whatsapp',
+            'notificationPreferences.*.app' => 'boolean',
+            'notificationPreferences.*.email' => 'boolean',
+            'notificationPreferences.*.sms' => 'boolean',
+            'notificationPreferences.*.whatsapp' => 'boolean',
         ]);
         $user->name = $validated['name'];
         $user->first_name = $validated['firstName'] ?? null;
@@ -72,9 +77,10 @@ class ProfileController extends Controller
         $validated = $request->validate(['current_password' => 'required|string', 'email' => 'required|email|max:255|unique:users,email']);
         $user = Auth::user();
         if (!Hash::check($validated['current_password'], $user->password)) return response()->json(['message' => 'Mot de passe actuel incorrect.'], 422);
+        if (!\App\Services\CommunicationSettings::configureMail()) return response()->json(['message' => 'La messagerie doit être activée par un administrateur.'], 422);
         $token = bin2hex(random_bytes(32));
         Cache::put("email-change:{$token}", ['userId' => $user->id, 'email' => $validated['email']], now()->addMinutes(30));
-        $url = rtrim(env('FRONTEND_URL', config('app.url')), '/') . '/confirmer-email?token=' . urlencode($token);
+        $url = rtrim(config('app.frontend_url'), '/') . '/confirmer-email?token=' . urlencode($token);
         Mail::raw("Confirmez votre nouvelle adresse e-mail : {$url}", function ($mail) use ($validated) { $mail->to($validated['email'])->subject('Confirmation de votre adresse e-mail'); });
         return response()->json(['message' => 'Un lien de confirmation a été envoyé à la nouvelle adresse.']);
     }
@@ -93,14 +99,12 @@ class ProfileController extends Controller
 
     public function requestSmsVerification(Request $request, TwilioService $twilio): JsonResponse
     {
-        $validated = $request->validate(['phone' => 'required|string|max:32']);
+        $validated = $request->validate(['phone' => ['required', 'regex:/^\+[1-9][0-9]{7,14}$/']]);
         $user = Auth::user();
         $code = (string) random_int(100000, 999999);
-        $user->sms_phone = $validated['phone'];
-        $user->sms_verified_at = null;
-        $user->save();
-        Cache::put("sms-verification:{$user->id}", $code, now()->addMinutes(10));
-        $twilio->send($validated['phone'], "Votre code de vérification est : {$code}");
+        try { $twilio->send($validated['phone'], "Votre code de vérification est : {$code}"); }
+        catch (\Throwable $exception) { return response()->json(['message' => 'Envoi indisponible. Vérifiez la configuration Twilio auprès de votre administrateur.'], 422); }
+        Cache::put("sms-verification:{$user->id}", ['hash' => Hash::make($code), 'phone' => $validated['phone']], now()->addMinutes(10));
         return response()->json(['message' => 'Code envoyé par SMS.']);
     }
 
@@ -108,7 +112,10 @@ class ProfileController extends Controller
     {
         $request->validate(['code' => 'required|digits:6']);
         $user = Auth::user();
-        if (!hash_equals((string) Cache::pull("sms-verification:{$user->id}"), $request->code)) return response()->json(['message' => 'Code SMS invalide ou expiré.'], 422);
+        $pending = Cache::get("sms-verification:{$user->id}");
+        if (!is_array($pending) || !Hash::check($request->code, $pending['hash'])) return response()->json(['message' => 'Code SMS invalide ou expiré.'], 422);
+        Cache::forget("sms-verification:{$user->id}");
+        $user->sms_phone = $pending['phone'];
         $user->sms_verified_at = now();
         $user->save();
         return response()->json(['data' => $this->userToArray($user->fresh())]);
@@ -139,9 +146,12 @@ class ProfileController extends Controller
         return response()->json(['message' => 'Mot de passe modifié. Reconnectez-vous.']);
     }
 
-    public function beginTwoFactor(TotpService $totp): JsonResponse
+    public function beginTwoFactor(Request $request, TotpService $totp): JsonResponse
     {
         $user = Auth::user();
+        $request->validate(['current_password'=>'required|string']);
+        if (!Hash::check($request->current_password,$user->password)) return response()->json(['message'=>'Mot de passe actuel incorrect.'],422);
+        if ($user->two_factor_confirmed_at) return response()->json(['message'=>'Désactivez la configuration existante avant de la remplacer.'],409);
         $secret = $totp->generateSecret();
         $user->two_factor_secret = encrypt($secret);
         $user->two_factor_confirmed_at = null;

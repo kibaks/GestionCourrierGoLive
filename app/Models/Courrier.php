@@ -10,6 +10,21 @@ class Courrier extends Model
 {
     use HasUuids;
 
+    protected function performInsert(\Illuminate\Database\Eloquent\Builder $query)
+    {
+        return \Illuminate\Support\Facades\DB::transaction(fn () => parent::performInsert($query), 3);
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(fn (self $courrier) => app(\App\Services\CourrierNumberingService::class)->assign($courrier));
+        static::updating(function (self $courrier) {
+            foreach (['numero', 'numero_organisationnel', 'entite_numerotation_id', 'numerotation_snapshot'] as $field) {
+                if ($courrier->isDirty($field)) throw \Illuminate\Validation\ValidationException::withMessages(['numerotation' => 'Les références attribuées sont immuables.']);
+            }
+        });
+    }
+
     public function assignations(): HasMany
     {
         return $this->hasMany(Assignation::class);
@@ -35,6 +50,7 @@ class Courrier extends Model
     protected $fillable = [
         'id', // pour sync Firestore → MySQL (création avec ID existant)
         'numero',
+        'entite_numerotation_id',
         'client_request_id', // (C3) idempotence anti-doublons — DOIT être fillable, sinon l'insertion est silencieusement ignorée
         'type',
         'sens', // ENTRANT, SORTANT — formulaire courrier
@@ -56,6 +72,7 @@ class Courrier extends Model
         'date_reception' => 'datetime',
         'date_enregistrement' => 'datetime',
         'extra_fields' => 'array',
+        'numerotation_snapshot' => 'array',
     ];
 
     /**
@@ -67,6 +84,10 @@ class Courrier extends Model
         return [
             'id' => $arr['id'],
             'numero' => $arr['numero'],
+            'numeroSysteme' => $arr['numero'],
+            'numeroOrganisationnel' => $arr['numero_organisationnel'] ?? null,
+            'entiteNumerotationId' => $arr['entite_numerotation_id'] ?? null,
+            'numerotationSnapshot' => $arr['numerotation_snapshot'] ?? null,
             'clientRequestId' => $arr['client_request_id'] ?? null,
             'type' => $arr['type'],
             'sens' => $arr['sens'] ?? null,

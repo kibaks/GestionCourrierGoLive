@@ -45,10 +45,10 @@ class NotificationsController extends Controller
     public function store(Request $request, NotificationDeliveryService $delivery): JsonResponse
     {
         $validated = $request->validate([
-            'userId' => 'required|string',
+            'userId' => 'required|string|exists:users,id',
             'type' => 'required|string|in:assignation,rappel,echeance,workflow,courrier,system',
             'title' => 'required|string|max:255',
-            'message' => 'required|string',
+            'message' => 'required|string|max:4000',
             'priority' => 'nullable|string|in:normal,high,urgent',
             'relatedId' => 'nullable|string',
             'relatedType' => 'nullable|string',
@@ -56,6 +56,14 @@ class NotificationsController extends Controller
             'metadata' => 'nullable|array'
         ]);
 
+        $actor = Auth::user();
+        $recipient = \App\Models\User::findOrFail($validated['userId']);
+        if ($actor->id !== $recipient->id && !$actor->isSuperAdmin()) {
+            $courrier = !empty($validated['relatedId']) && ($validated['relatedType'] ?? '') === 'courrier'
+                ? \App\Models\Courrier::find($validated['relatedId']) : null;
+            $access = app(\App\Services\CourrierAccessService::class);
+            abort_unless($courrier && $actor->can('assigner-courrier') && $access->canViewCourrier($actor, $courrier) && $access->canViewCourrier($recipient, $courrier), 403);
+        }
         $notification = Notification::create([
             'userId' => $validated['userId'],
             'type' => $validated['type'],

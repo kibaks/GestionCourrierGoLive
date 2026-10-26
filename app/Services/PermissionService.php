@@ -42,14 +42,14 @@ class PermissionService
     {
         $roleDef = RoleDefinition::where('code', $roleCode)->first();
 
-        if ($roleDef && is_array($roleDef->permissions) && count($roleDef->permissions) > 0) {
+        if ($roleDef && is_array($roleDef->permissions)) {
             $permissions = $roleDef->permissions;
         } else {
             $permissions = $this->getDefaultPermissionsForRole($roleCode);
         }
 
         // Responsables organisationnels : accès à l’organigramme et aux formulaires
-        if (in_array($roleCode, ['SECRETAIRE', 'DIRECTEUR', 'CHEF_DIVISION', 'CHEF_BUREAU'], true) && !in_array(Permission::VOIR_DEPARTEMENTS, $permissions, true)) {
+        if (!$roleDef && in_array($roleCode, ['SECRETAIRE', 'DIRECTEUR', 'CHEF_DIVISION', 'CHEF_BUREAU'], true) && !in_array(Permission::VOIR_DEPARTEMENTS, $permissions, true)) {
             $permissions[] = Permission::VOIR_DEPARTEMENTS;
         }
 
