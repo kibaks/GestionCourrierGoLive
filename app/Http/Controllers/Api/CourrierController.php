@@ -317,6 +317,8 @@ class CourrierController extends Controller
                 return response()->json(['message' => 'Erreur base de données: ' . $msg], 500);
             } catch (\Illuminate\Validation\ValidationException $e) {
                 throw $e;
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface|\Illuminate\Auth\Access\AuthorizationException $e) {
+                throw $e;
             } catch (Throwable $e) {
                 Log::error('CourrierController::store — exception à l\'insertion', [
                     'message' => $e->getMessage(),
@@ -467,6 +469,8 @@ class CourrierController extends Controller
             return response()->json(['message' => 'Erreur base de données: ' . $msg], 500);
         } catch (\Illuminate\Validation\ValidationException $e) {
                 throw $e;
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface|\Illuminate\Auth\Access\AuthorizationException $e) {
+                throw $e;
             } catch (Throwable $e) {
             Log::error('CourrierController::bulkStore — exception', [
                 'message' => $e->getMessage(),
@@ -580,6 +584,8 @@ class CourrierController extends Controller
                 return response()->json(['message' => 'Erreur base de données: ' . $msg], 500);
             } catch (\Illuminate\Validation\ValidationException $e) {
                 throw $e;
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface|\Illuminate\Auth\Access\AuthorizationException $e) {
+                throw $e;
             } catch (Throwable $e) {
                 Log::error('CourrierController::update — exception', ['message' => $e->getMessage()]);
                 $message = config('app.debug') ? $e->getMessage() : 'Erreur lors de la mise à jour du courrier.';
@@ -669,6 +675,8 @@ class CourrierController extends Controller
             Log::error('CourrierController::update (create) — erreur base de données', ['exception' => $msg]);
             return response()->json(['message' => 'Erreur base de données: ' . $msg], 500);
         } catch (\Illuminate\Validation\ValidationException $e) {
+                throw $e;
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface|\Illuminate\Auth\Access\AuthorizationException $e) {
                 throw $e;
             } catch (Throwable $e) {
             Log::error('CourrierController::update (create) — exception à l\'insertion', [
