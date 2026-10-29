@@ -89,6 +89,7 @@ class AnnotationsController extends Controller
             $items[] = [
                 'id' => $c->id,
                 'numero' => $c->numero,
+                'numeroOrganisationnel' => $c->numero_organisationnel,
                 'objet' => $c->objet,
                 'type' => $c->type,
                 'sens' => $c->sens,
@@ -136,6 +137,7 @@ class AnnotationsController extends Controller
             $query->whereIn('created_by', $userIds);
         }
 
+        $query->whereIn('courrier_id',$this->accessService->getAccessibleCourriersQuery(Auth::user())->reorder()->select('id'));
         $ids = $query->distinct()->pluck('courrier_id')->map(fn ($id) => (string) $id)->values();
         return response()->json(['data' => $ids]);
     }
@@ -215,7 +217,9 @@ class AnnotationsController extends Controller
             'decision' => 'nullable|in:FAVORABLE,A_REVOIR,INFO',
         ]);
 
-        $courrier = Courrier::findOrFail($validated['courrierId']);
+        return \Illuminate\Support\Facades\DB::transaction(function()use($validated,$user){
+        $courrier = Courrier::whereKey($validated['courrierId'])->lockForUpdate()->firstOrFail();
+        $policy=app(\App\Services\AnnotationActionPolicy::class);$policy->assert($user,$courrier);$policy->validateLinks($user,$courrier,$validated);
         if (!$this->accessService->canViewCourrier($user, $courrier)) {
             return response()->json(['message' => 'Accès non autorisé'], 403);
         }
@@ -244,24 +248,8 @@ class AnnotationsController extends Controller
             $this->notifyDocumentAnnotation($courrier, $annotation, $user);
         }
 
-        // P4 (P6 : toujours créé, même si le DG est l'enregistreur) — annotation DG /
-        // SUPER_ADMIN posée au niveau du document ou du courrier (pas sur une étape) :
-        // création DIRECTE de l'étape correspondante, à traiter par l'enregistreur du
-        // courrier (ou réutilisation de l'étape DG auto ouverte).
-        if (
-            in_array($user->role, ['DIRECTEUR_GENERAL', 'SUPER_ADMIN'], true)
-            && empty($validated['workflowEtapeId'])
-            && empty($validated['parentId'])
-            && !empty($courrier->enregistre_par)
-        ) {
-            $step = $this->attachOrCreateDgStep($courrier, $annotation, $user);
-            if ($step) {
-                $annotation->workflow_etape_id = $step->id;
-                $annotation->save();
-            }
-        }
-
         return response()->json(['data' => $annotation->toArray()], 201);
+        },3);
     }
 
     /**
@@ -304,7 +292,7 @@ class AnnotationsController extends Controller
                 Notification::create([
                     'userId' => $courrier->enregistre_par,
                     'type' => 'workflow',
-                    'title' => "Nouvelle étape à traiter — {$courrier->numero}",
+                    'title' => 'Nouvelle étape à traiter — ' . ($courrier->numero_organisationnel ?: $courrier->numero),
                     'message' => "Étape « {$label} » créée automatiquement après l'annotation du DG ({$author->name}) sur « {$courrier->objet} ».",
                     'priority' => 'high',
                     'read' => false,
@@ -332,12 +320,14 @@ class AnnotationsController extends Controller
     {
         $this->authorize('modifier-courrier');
         $user = Auth::user();
+        return \Illuminate\Support\Facades\DB::transaction(function()use($id,$request,$user){
         $annotation = Annotation::findOrFail($id);
-        $courrier = $annotation->courrier;
+        $courrier = Courrier::whereKey($annotation->courrier_id)->lockForUpdate()->firstOrFail();
 
         if (!$courrier || !$this->accessService->canViewCourrier($user, $courrier)) {
             return response()->json(['message' => 'Accès non autorisé'], 403);
         }
+        app(\App\Services\AnnotationActionPolicy::class)->assert($user,$courrier);
         $isAuthor = (string) $annotation->created_by === (string) $user->id;
         $isDg = in_array($user->role, ['DIRECTEUR_GENERAL', 'SUPER_ADMIN'], true);
         if (!$isAuthor && !$isDg) {
@@ -351,6 +341,7 @@ class AnnotationsController extends Controller
             'workflowEtapeId' => 'nullable|uuid',
         ]);
 
+        app(\App\Services\AnnotationActionPolicy::class)->validateLinks($user,$courrier,$validated);
         $annotation->fill([
             'contenu' => $validated['contenu'] ?? $annotation->contenu,
             'statut' => $validated['statut'] ?? $annotation->statut,
@@ -359,6 +350,7 @@ class AnnotationsController extends Controller
         ])->save();
 
         return response()->json(['data' => $annotation->toArray()]);
+        },3);
     }
 
     /**
@@ -370,12 +362,14 @@ class AnnotationsController extends Controller
     {
         $this->authorize('modifier-courrier');
         $user = Auth::user();
+        return \Illuminate\Support\Facades\DB::transaction(function()use($id,$user){
         $annotation = Annotation::findOrFail($id);
-        $courrier = $annotation->courrier;
+        $courrier = Courrier::whereKey($annotation->courrier_id)->lockForUpdate()->firstOrFail();
 
         if (!$courrier || !$this->accessService->canViewCourrier($user, $courrier)) {
             return response()->json(['message' => 'Accès non autorisé'], 403);
         }
+        app(\App\Services\AnnotationActionPolicy::class)->assert($user,$courrier);
         $isAuthor = (string) $annotation->created_by === (string) $user->id;
         $isDg = in_array($user->role, ['DIRECTEUR_GENERAL', 'SUPER_ADMIN'], true);
         if (!$isAuthor && !$isDg) {
@@ -387,6 +381,7 @@ class AnnotationsController extends Controller
         $annotation->delete();
 
         return response()->json(['message' => 'Annotation supprimée']);
+        },3);
     }
 
     /**
@@ -432,7 +427,7 @@ class AnnotationsController extends Controller
             '%s a annoté le document %s du courrier %s (page %d)%s : « %s »',
             $author->name,
             $annotation->fichier_nom ?: 'PDF',
-            $courrier->numero,
+            ($courrier->numero_organisationnel ?: $courrier->numero),
             (int) $annotation->page,
             $decisionLabel ? " — {$decisionLabel}" : '',
             mb_strimwidth($annotation->contenu, 0, 120, '…')
@@ -443,7 +438,7 @@ class AnnotationsController extends Controller
             $notification = Notification::create([
                 'userId' => $uid,
                 'type' => 'courrier',
-                'title' => "Annotation du document — {$courrier->numero}",
+                'title' => 'Annotation du document — ' . ($courrier->numero_organisationnel ?: $courrier->numero),
                 'message' => $message,
                 'priority' => 'high',
                 'read' => false,

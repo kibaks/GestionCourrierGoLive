@@ -18,3 +18,12 @@ storage/app/public/*.jpg
 composer.phar
 database/*.sqlite
 storage/backup_*.json
+
+# Private deployment credentials and local backups
+.env.*
+!.env.example
+*.pem
+*.key
+id_ed25519*
+*.sql.gz
+*.dump

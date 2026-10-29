@@ -77,6 +77,7 @@ class WorkflowEtapesController extends Controller
             $query->whereIn('assigne_a', $userIds);
         }
 
+        $query->whereIn('courrier_id', $this->accessService->getAccessibleCourriersQuery(Auth::user())->reorder()->select('id'));
         $ids = $query->distinct()->pluck('courrier_id')->map(fn ($id) => (string) $id)->values();
         return response()->json(['data' => $ids]);
     }
@@ -115,199 +116,71 @@ class WorkflowEtapesController extends Controller
      * Créer une étape de workflow.
      * POST /api/workflow-etapes
      */
+    private function rules(): array
+    {
+        return ['etape'=>'sometimes|required|string|max:255','assigneA'=>'nullable|uuid|exists:users,id','statut'=>'sometimes|in:EN_ATTENTE,EN_COURS,TERMINE,REJETE','dateDebut'=>'nullable|date','dateFin'=>'nullable|date','annotation'=>'nullable|string|max:20000','commentaire'=>'nullable|string|max:20000','dureeEstimee'=>'nullable|numeric|min:0','ordre'=>'nullable|integer|min:0','estCondition'=>'sometimes|boolean','actionSiVrai'=>'nullable|uuid','actionSiFaux'=>'nullable|uuid','declencheur'=>'nullable|array:type,etapePrecedenteId,dateDeclenchement','declencheur.type'=>'sometimes|in:IMMEDIAT,APRES_ETAPE,CONDITION,DATE','declencheur.etapePrecedenteId'=>'nullable|uuid','declencheur.dateDeclenchement'=>'nullable|date','decision'=>'nullable|in:AVIS_FAVORABLE,A_REVOIR,INFO'];
+    }
+
     public function store(Request $request): JsonResponse
     {
-        $this->authorize('creer-workflow');
-        $user = Auth::user();
-
-        $validated = $request->validate([
-            'courrierId' => 'required|uuid|exists:courriers,id',
-            'etape' => 'required|string|max:255',
-            // assigneA facultatif, stocké tel quel (id front/Firebase, etc.)
-            'assigneA' => 'nullable|string',
-            'statut' => 'nullable|in:EN_ATTENTE,EN_COURS,TERMINE,REJETE',
-            'commentaire' => 'nullable|string',
-            'dureeEstimee' => 'nullable|numeric|min:0',
-            'ordre' => 'nullable|integer|min:0',
-            'estCondition' => 'nullable|boolean',
-            'actionSiVrai' => 'nullable|uuid',
-            'actionSiFaux' => 'nullable|uuid',
-            'declencheur' => 'nullable|array',
-            'declencheur.type' => 'nullable|in:IMMEDIAT,APRES_ETAPE,CONDITION,DATE',
-            'declencheur.etapePrecedenteId' => 'nullable|uuid',
-            'declencheur.dateDeclenchement' => 'nullable|date',
-        ]);
-
-        $courrier = Courrier::findOrFail($validated['courrierId']);
-        if (!$this->accessService->canUpdateCourrier($user, $courrier)) {
-            return response()->json(['message' => 'Non autorisé'], 403);
-        }
-
-        $etape = WorkflowEtape::create([
-            'courrier_id' => $validated['courrierId'],
-            'etape' => $validated['etape'],
-            'assigne_a' => $validated['assigneA'] ?? null,
-            'statut' => $validated['statut'] ?? 'EN_ATTENTE',
-            'commentaire' => $validated['commentaire'] ?? null,
-            'cree_par' => $user->id,
-            'duree_estimee' => $validated['dureeEstimee'] ?? null,
-            'ordre' => $validated['ordre'] ?? null,
-            'est_condition' => $validated['estCondition'] ?? false,
-            'action_si_vrai' => $validated['actionSiVrai'] ?? null,
-            'action_si_faux' => $validated['actionSiFaux'] ?? null,
-            'declencheur' => $validated['declencheur'] ?? null,
-        ]);
-
-        return response()->json(['data' => $etape->toArray()], 201);
+        abort(409,'Créez les tâches depuis les procédures des paramètres administrateur.');
+        $this->authorize('creer-workflow');$actor=Auth::user();
+        $v=$request->validate($this->rules()+['courrierId'=>'required|uuid|exists:courriers,id']);
+        if(empty($v['etape']))throw \Illuminate\Validation\ValidationException::withMessages(['etape'=>'Indiquez le nom de l’étape.']);
+        $item=\Illuminate\Support\Facades\DB::transaction(function()use($v,$actor){
+            $courrier=Courrier::whereKey($v['courrierId'])->lockForUpdate()->firstOrFail();
+            abort_unless($this->accessService->canUpdateCourrier($actor,$courrier),403);
+            abort_if(in_array($courrier->statut,['TRAITE','ARCHIVE'],true),409,'Le courrier est clôturé.');
+            abort_if(WorkflowEtape::where('courrier_id',$courrier->id)->where('declencheur->circuit','ARMP')->exists(),409,'Ce circuit est protégé : utilisez ses étapes de traitement.');
+            $target=$v['assigneA']??(($v['estCondition']??false)?$actor->id:null);
+            if(!$target||!\App\Models\User::whereKey($target)->where('actif',true)->exists())throw \Illuminate\Validation\ValidationException::withMessages(['assigneA'=>'Choisissez un responsable actif.']);
+            $person=\App\Models\User::findOrFail($target);$allowed=app(\App\Services\OrganisationWorkflowService::class)->entities($actor);
+            abort_unless($target===$actor->id||in_array($actor->role,['SUPER_ADMIN'],true)||$allowed->contains('id',$person->entite_id),403,'Responsable hors de votre périmètre.');
+            $step=WorkflowEtape::create(['courrier_id'=>$courrier->id,'etape'=>$v['etape'],'assigne_a'=>$target,'statut'=>'EN_ATTENTE','cree_par'=>$actor->id,'commentaire'=>$v['commentaire']??null,'duree_estimee'=>$v['dureeEstimee']??null,'ordre'=>$v['ordre']??null,'est_condition'=>$v['estCondition']??false,'action_si_vrai'=>$v['actionSiVrai']??null,'action_si_faux'=>$v['actionSiFaux']??null,'declencheur'=>$v['declencheur']??null]);
+            $engine=app(\App\Services\WorkflowExecutionService::class);$steps=WorkflowEtape::where('courrier_id',$courrier->id)->get();$engine->validateGraph($steps);$engine->ensureAssignment($courrier,$step,$actor);$engine->synchronize($courrier,$steps);$engine->notifyReady($courrier,$steps);
+            if(($v['statut']??'EN_ATTENTE')!=='EN_ATTENTE')$step=$engine->transition($step->id,$actor,$v,true);
+            return $step;
+        },3);
+        return response()->json(['data'=>$item->toArray()],201);
     }
 
-    /**
-     * Mettre à jour une étape de workflow.
-     * PUT /api/workflow-etapes/{id}
-     */
-    public function update(Request $request, string $id): JsonResponse
+    public function update(Request $request,string $id): JsonResponse
     {
-        $user = Auth::user();
-
-        $etape = WorkflowEtape::with('courrier')->findOrFail($id);
-        $courrier = $etape->courrier;
-
-        // M3 (25/08/2026) : l'ASSIGNÉ de l'étape peut lui-même la faire avancer
-        // (Démarrer / Terminer / Rejeter) — aucun rôle de la table roles ne détient
-        // « modifier-workflow » en prod, donc sans cette exception le workflow était
-        // bloqué (403 sur Démarrer/Terminer).
-        // L'assignation de l'étape est elle-même l'autorisation : elle n'est pas
-        // une ligne `Assignation` du courrier, et un assigné peut appartenir à un
-        // service différent de celui du courrier (visas croisés) — aucun contrôle
-        // d'accès au courrier n'est exigé ici. La réponse ne renvoie que les champs
-        // de l'étape (cf. WorkflowEtape::toArray), pas le contenu du courrier.
-        // Toute autre opération (re-assignation, renommage, réordonnancement) reste
-        // réservée aux détenteurs de « modifier-workflow » + canUpdateCourrier.
-        $isAssignee = (string) ($etape->assigne_a ?? '') === (string) $user->id;
-        $statutRequis = $request->input('statut');
-        $isOwnStatusTransition = $isAssignee
-            && is_string($statutRequis)
-            && in_array($statutRequis, ['EN_COURS', 'TERMINE', 'REJETE'], true)
-            && !$request->filled('assigneA')
-            && !$request->filled('etape')
-            && !$request->filled('ordre');
-
-        if ($isOwnStatusTransition) {
-            $allowedTransitions = match ($etape->statut) {
-                'EN_ATTENTE' => ['EN_COURS', 'TERMINE', 'REJETE'],
-                'EN_COURS' => ['TERMINE', 'REJETE'],
-                default => [],
-            };
-            if (!in_array($statutRequis, $allowedTransitions, true)) {
-                return response()->json(['message' => 'Transition de statut non autorisée'], 422);
-            }
-        } else {
-            $this->authorize('modifier-workflow');
-            if (!$this->accessService->canUpdateCourrier($user, $courrier)) {
-                return response()->json(['message' => 'Non autorisé'], 403);
-            }
-        }
-
-        $validated = $request->validate([
-            'etape' => 'sometimes|string|max:255',
-            'assigneA' => 'sometimes|string',
-            'statut' => 'sometimes|in:EN_ATTENTE,EN_COURS,TERMINE,REJETE',
-            'dateDebut' => 'nullable|date',
-            'dateFin' => 'nullable|date',
-            'commentaire' => 'nullable|string',
-            'dureeEstimee' => 'nullable|numeric|min:0',
-            'ordre' => 'nullable|integer|min:0',
-            'declencheur' => 'nullable|array',
-            'responses' => 'nullable|array',
-        ]);
-
-        $update = [];
-        if (isset($validated['etape'])) $update['etape'] = $validated['etape'];
-        if (isset($validated['assigneA'])) $update['assigne_a'] = $validated['assigneA'];
-        if (isset($validated['statut'])) $update['statut'] = $validated['statut'];
-        if (array_key_exists('dateDebut', $validated)) $update['date_debut'] = $validated['dateDebut'];
-        if (array_key_exists('dateFin', $validated)) $update['date_fin'] = $validated['dateFin'];
-        if (array_key_exists('commentaire', $validated)) $update['commentaire'] = $validated['commentaire'];
-        if (array_key_exists('dureeEstimee', $validated)) $update['duree_estimee'] = $validated['dureeEstimee'];
-        if (array_key_exists('ordre', $validated)) $update['ordre'] = $validated['ordre'];
-        if (isset($validated['declencheur'])) $update['declencheur'] = $validated['declencheur'];
-        if (isset($validated['responses'])) $update['responses'] = $validated['responses'];
-
-        $etape->update($update);
-
-        // Auto-transition courrier → TRAITE si toutes les étapes sont TERMINE ou REJETE
-        if (isset($validated['statut']) && in_array($validated['statut'], ['TERMINE', 'REJETE'])) {
-            $courrier = $etape->courrier;
-            if ($courrier && $courrier->statut !== 'TRAITE' && $courrier->statut !== 'ARCHIVE') {
-                $autresEtapes = WorkflowEtape::where('courrier_id', $courrier->id)
-                    ->where('est_condition', false)
-                    ->get();
-                $allDone = $autresEtapes->isNotEmpty() && $autresEtapes->every(
-                    fn($e) => in_array($e->statut, ['TERMINE', 'REJETE'])
-                );
-                if ($allDone) {
-                    $courrier->update(['statut' => 'TRAITE']);
-                }
-            }
-        }
-
-        return response()->json(['data' => $etape->fresh()->toArray()]);
+        $actor=Auth::user();$step=WorkflowEtape::with('courrier')->findOrFail($id);
+        $manager=app(\App\Services\WorkflowExecutionService::class)->canManageStep($actor,$step,$step->courrier);
+        abort_unless($manager||(string)$step->assigne_a===(string)$actor->id,403);
+        if($request->exists('responses'))throw \Illuminate\Validation\ValidationException::withMessages(['responses'=>'Ajoutez une réponse sans remplacer l’historique.']);
+        $v=$request->validate($this->rules());
+        $updated=app(\App\Services\WorkflowExecutionService::class)->transition($id,$actor,$v,$manager);
+        return response()->json(['data'=>$updated->toArray()]);
     }
 
-    /**
-     * Ajouter une réponse/avis à une étape (historique).
-     * POST /api/workflow-etapes/{id}/responses
-     * Accessible à : l'assigné de l'étape, le créateur, ou tout utilisateur pouvant voir le courrier (supérieur hiérarchique).
-     */
-    public function addResponse(Request $request, string $id): JsonResponse
+    public function addResponse(Request $request,string $id): JsonResponse
     {
-        $this->authorize('voir-courriers');
-        $user = Auth::user();
-
-        $etape = WorkflowEtape::with('courrier')->findOrFail($id);
-
-        $isAssigne  = (string) $etape->assigne_a  === (string) $user->id;
-        $isCreateur = (string) $etape->cree_par   === (string) $user->id;
-        $canView    = $this->accessService->canViewCourrier($user, $etape->courrier);
-
-        if (!$isAssigne && !$isCreateur && !$canView) {
-            return response()->json(['message' => 'Non autorisé — vous devez être assigné à cette étape ou avoir accès au courrier'], 403);
-        }
-
-        $validated = $request->validate([
-            'message' => 'required|string',
-            'decision' => 'nullable|in:AVIS_FAVORABLE,A_REVOIR,INFO',
-        ]);
-
-        $responses = $etape->responses ?? [];
-        $responses[] = [
-            'id' => \Illuminate\Support\Str::uuid()->toString(),
-            'auteurId' => $user->id,
-            'auteurNom' => $user->name,
-            'message' => $validated['message'],
-            'decision' => $validated['decision'] ?? null,
-            'createdAt' => now()->format('c'),
-        ];
-        $etape->update(['responses' => $responses]);
-
-        return response()->json(['data' => $etape->fresh()->toArray()]);
+        $this->authorize('voir-courriers');$actor=Auth::user();$v=$request->validate(['message'=>'required|string|max:20000','decision'=>'nullable|in:AVIS_FAVORABLE,A_REVOIR,INFO']);
+        $courrierId=WorkflowEtape::findOrFail($id)->courrier_id;
+        $step=\Illuminate\Support\Facades\DB::transaction(function()use($actor,$v,$id,$courrierId){
+            $courrier=Courrier::whereKey($courrierId)->lockForUpdate()->firstOrFail();$step=WorkflowEtape::whereKey($id)->lockForUpdate()->firstOrFail();
+            app(\App\Services\AnnotationActionPolicy::class)->assert($actor,$courrier);
+            abort_unless((string)$step->assigne_a===(string)$actor->id||$actor->isSuperAdmin(),403);
+            abort_if($courrier->statut==='ARCHIVE',409,'Le courrier est archivé.');
+            if(in_array($v['decision']??'INFO',['AVIS_FAVORABLE','A_REVOIR'],true)) {
+                abort_unless($step->assigne_a===$actor->id||$actor->isSuperAdmin(),403,'Avis réservé au responsable affecté.');
+                abort_if(in_array($step->statut,['TERMINE','REJETE'],true),409,'La décision est déjà enregistrée.');
+            }
+            $history=$step->responses??[];$history[]=['id'=>(string)\Illuminate\Support\Str::uuid(),'auteurId'=>$actor->id,'auteurNom'=>$actor->name,'message'=>$v['message'],'decision'=>$v['decision']??'INFO','createdAt'=>now()->toIso8601String()];$step->update(['responses'=>$history]);return $step;
+        },3);
+        return response()->json(['data'=>$step->toArray()]);
     }
 
-    /**
-     * Supprimer une étape de workflow.
-     * DELETE /api/workflow-etapes/{id}
-     */
     public function destroy(string $id): JsonResponse
     {
-        $this->authorize('modifier-workflow');
-        $user = Auth::user();
-
-        $etape = WorkflowEtape::with('courrier')->findOrFail($id);
-        if (!$this->accessService->canUpdateCourrier($user, $etape->courrier)) {
-            return response()->json(['message' => 'Non autorisé'], 403);
-        }
-
-        $etape->delete();
-        return response()->json(null, 204);
+        $this->authorize('modifier-workflow');$actor=Auth::user();$courrierId=WorkflowEtape::findOrFail($id)->courrier_id;
+        \Illuminate\Support\Facades\DB::transaction(function()use($id,$courrierId,$actor){
+            $courrier=Courrier::whereKey($courrierId)->lockForUpdate()->firstOrFail();$step=WorkflowEtape::whereKey($id)->lockForUpdate()->firstOrFail();abort_unless($this->accessService->canUpdateCourrier($actor,$courrier),403);
+            abort_if($step->statut!=='EN_ATTENTE'||($step->declencheur['circuit']??null)==='ARMP'||$courrier->statut==='ARCHIVE',409,'Cette étape possède un historique ou appartient à un circuit protégé.');
+            $step->delete();$steps=WorkflowEtape::where('courrier_id',$courrierId)->get();app(\App\Services\WorkflowExecutionService::class)->validateGraph($steps);
+        },3);
+        return response()->json(null,204);
     }
 }

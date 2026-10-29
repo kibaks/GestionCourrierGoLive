@@ -95,8 +95,9 @@ class CourrierController extends Controller
             $filterDirection, $filterService, $filterSousService, $filterBureau,
             $request->input('created_by'),
         ])));
-        $isAdmin = $user->role === 'SUPER_ADMIN' || $user->isDirecteurGeneral() || $user->isSecretaire();
+        $isAdmin = $user->role === 'SUPER_ADMIN';
         $cacheKey = ($isAdmin ? 'courriers_all' : "courriers_{$user->id}") . ":{$filterHash}";
+        $cacheKey .= ':' . Cache::get('courriers_cache_version', '0') . ':' . md5(json_encode([$user->role, $user->direction, $user->service, $user->entite_id]));
 
         $data = Cache::remember($cacheKey, 30, function () use ($user, $request, $filterDirection, $filterService, $filterSousService, $filterBureau) {
             // SUPER_ADMIN voit toujours tous les courriers (évite liste vide si rôle mal résolu)
@@ -121,14 +122,12 @@ class CourrierController extends Controller
             if ($filterSousService) {
                 // sous_service peut être stocké dans extra_fields (JSON) ou dans une colonne dédiée
                 $query->where(function (Builder $q) use ($filterSousService) {
-                    $q->where('sous_service', $filterSousService)
-                      ->orWhereJsonContains('extra_fields->sousService', $filterSousService);
+                    $q->whereJsonContains('extra_fields->sousService', $filterSousService);
                 });
             }
             if ($filterBureau) {
                 $query->where(function (Builder $q) use ($filterBureau) {
-                    $q->where('bureau', $filterBureau)
-                      ->orWhereJsonContains('extra_fields->bureau', $filterBureau);
+                    $q->whereJsonContains('extra_fields->bureau', $filterBureau);
                 });
             }
 
@@ -148,7 +147,22 @@ class CourrierController extends Controller
             return $courriers->map(fn (Courrier $c) => $c->toArray())->values()->all();
         });
 
+        // Read receipts are personal and deliberately outside the shared courrier cache.
+        $reads = DB::table('courrier_reads')->where('user_id', $user->id)
+            ->whereIn('courrier_id', array_column($data, 'id'))->pluck('read_at', 'courrier_id');
+        $data = array_map(fn ($row) => array_merge($row, ['isRead' => isset($reads[$row['id']]), 'readAt' => $reads[$row['id']] ?? null]), $data);
         return response()->json(['data' => $data]);
+    }
+
+    public function markRead(string $id): JsonResponse
+    {
+        $this->authorize('voir-courriers');
+        $user = Auth::user();
+        $courrier = Courrier::findOrFail($id);
+        $hasNotification = !$user->isSecretaire() && \App\Models\Notification::where('userId', $user->id)->where('relatedId', $id)->exists();
+        abort_unless($hasNotification || $this->accessService->canViewCourrier($user, $courrier), 403);
+        DB::table('courrier_reads')->insertOrIgnore(['courrier_id' => $id, 'user_id' => $user->id, 'read_at' => now()]);
+        return response()->json(['data' => ['id' => $id, 'isRead' => true, 'readAt' => DB::table('courrier_reads')->where('courrier_id', $id)->where('user_id', $user->id)->value('read_at')]]);
     }
 
     /**
@@ -157,6 +171,7 @@ class CourrierController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $this->authorize('creer-courrier');
         $user = Auth::user();
 
         if ($request->has('extraFields') && is_string($request->input('extraFields'))) {
@@ -176,7 +191,7 @@ class CourrierController extends Controller
             'destinataire' => 'required|string|max:255',
             'objet' => 'required|string',
             'priorite' => 'nullable|in:BASSE,NORMALE,HAUTE,URGENTE',
-            'statut' => 'nullable|string|max:32',
+            'statut' => 'nullable|in:ENREGISTRE',
             'enregistrePar' => 'nullable|string|max:255',
             'direction' => 'nullable|string|max:255',
             'service' => 'nullable|string|max:255',
@@ -188,6 +203,7 @@ class CourrierController extends Controller
             'fileName' => 'nullable|string',
             'extraFields' => 'nullable|array',
             'clientRequestId' => 'nullable|string|max:64',
+            'entiteNumerotationId' => 'nullable|uuid',
         ]);
 
         // Idempotence (C3) : replay d'une requête déjà traitée (retry réseau,
@@ -196,6 +212,7 @@ class CourrierController extends Controller
         if ($clientRequestId) {
             $existing = Courrier::where('client_request_id', $clientRequestId)->first();
             if ($existing) {
+                abort_unless($this->accessService->canViewCourrier(Auth::user(), $existing), 403);
                 Log::info('CourrierController::store — replay idempotent (clientRequestId déjà traité)', [
                     'client_request_id' => $clientRequestId,
                     'courrier_id' => $existing->id,
@@ -226,19 +243,19 @@ class CourrierController extends Controller
         $dateEnregistrement = isset($validated['dateEnregistrement'])
             ? $validated['dateEnregistrement']
             : now();
-        $enregistrePar = $validated['enregistrePar'] ?? $user->id;
+        $enregistrePar = $user->id;
 
         $attempt = 0;
         $maxAttempts = 5;
         while (true) {
             try {
-                // Tout dans UNE SEULE transaction : génération du numéro + insertion
-                // Le lockForUpdate est maintenu jusqu'à l'insert, empêchant les doublons
+                // Le modèle attribue les deux références dans la même transaction que l’insertion.
                 $courrier = DB::transaction(function () use ($validated, $dateEnregistrement, $enregistrePar, $clientRequestId) {
-                    $numero = $validated['numero'] ?? $this->generateNumero($validated['type']);
+                    $numero = null;
                     return Courrier::create([
                         'numero' => $numero,
                         'client_request_id' => $clientRequestId,
+                        'entite_numerotation_id' => $validated['entiteNumerotationId'] ?? null,
                         'type' => $validated['type'],
                         'sens' => $validated['sens'] ?? null,
                         'date_reception' => $validated['dateReception'],
@@ -247,7 +264,7 @@ class CourrierController extends Controller
                         'destinataire' => $validated['destinataire'],
                         'objet' => $validated['objet'],
                         'priorite' => $this->resolvePriorite($validated['priorite'] ?? null, $validated['extraFields'] ?? null),
-                        'statut' => $validated['statut'] ?? 'ENREGISTRE',
+                        'statut' => 'ENREGISTRE',
                         'enregistre_par' => $enregistrePar,
                         'direction' => $validated['direction'] ?? null,
                         'service' => $validated['service'] ?? null,
@@ -266,6 +283,7 @@ class CourrierController extends Controller
                     if ($clientRequestId) {
                         $existing = Courrier::where('client_request_id', $clientRequestId)->first();
                         if ($existing) {
+                abort_unless($this->accessService->canViewCourrier(Auth::user(), $existing), 403);
                             Log::info('CourrierController::store — doublon résolu par replay idempotent', [
                                 'client_request_id' => $clientRequestId,
                                 'courrier_id' => $existing->id,
@@ -297,6 +315,8 @@ class CourrierController extends Controller
                 }
                 Log::error('CourrierController::store — erreur base de données', ['exception' => $msg]);
                 return response()->json(['message' => 'Erreur base de données: ' . $msg], 500);
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                throw $e;
             } catch (Throwable $e) {
                 Log::error('CourrierController::store — exception à l\'insertion', [
                     'message' => $e->getMessage(),
@@ -327,6 +347,7 @@ class CourrierController extends Controller
      */
     public function bulkStore(Request $request): JsonResponse
     {
+        $this->authorize('creer-courrier');
         $user = Auth::user();
 
         $validated = $request->validate([
@@ -340,13 +361,14 @@ class CourrierController extends Controller
             'courriers.*.destinataire' => 'required|string|max:255',
             'courriers.*.objet' => 'required|string',
             'courriers.*.priorite' => 'nullable|in:BASSE,NORMALE,HAUTE,URGENTE',
-            'courriers.*.statut' => 'nullable|string|max:32',
+            'courriers.*.statut' => 'nullable|in:ENREGISTRE',
             'courriers.*.enregistrePar' => 'nullable|string|max:255',
             'courriers.*.direction' => 'nullable|string|max:255',
             'courriers.*.service' => 'nullable|string|max:255',
             'courriers.*.fichier' => 'nullable|string',
             'courriers.*.extraFields' => 'nullable|array',
             'courriers.*.clientRequestId' => 'nullable|string|max:64',
+            'courriers.*.entiteNumerotationId' => 'nullable|uuid',
         ]);
 
         $items = $validated['courriers'];
@@ -388,20 +410,22 @@ class CourrierController extends Controller
                     if ($clientRequestId) {
                         $existing = Courrier::where('client_request_id', $clientRequestId)->first();
                         if ($existing) {
+                abort_unless($this->accessService->canViewCourrier(Auth::user(), $existing), 403);
                             $created[] = $existing;
                             continue;
                         }
                     }
 
-                    $numero = $item['numero'] ?? $this->generateNumero($item['type']);
+                    $numero = null;
                     $dateEnregistrement = isset($item['dateEnregistrement'])
                         ? $item['dateEnregistrement']
                         : now();
-                    $enregistreParItem = $item['enregistrePar'] ?? $enregistrePar;
+                    $enregistreParItem = $enregistrePar;
 
                     $courrier = Courrier::create([
                         'numero' => $numero,
                         'client_request_id' => $clientRequestId,
+                        'entite_numerotation_id' => $item['entiteNumerotationId'] ?? null,
                         'type' => $item['type'],
                         'sens' => $item['sens'] ?? null,
                         'date_reception' => $item['dateReception'],
@@ -410,7 +434,7 @@ class CourrierController extends Controller
                         'destinataire' => $item['destinataire'],
                         'objet' => $item['objet'],
                         'priorite' => $item['priorite'] ?? 'NORMALE',
-                        'statut' => $item['statut'] ?? 'ENREGISTRE',
+                        'statut' => 'ENREGISTRE',
                         'enregistre_par' => $enregistreParItem,
                         'direction' => $item['direction'] ?? null,
                         'service' => $item['service'] ?? null,
@@ -441,7 +465,9 @@ class CourrierController extends Controller
             }
             Log::error('CourrierController::bulkStore — erreur base de données', ['exception' => $msg]);
             return response()->json(['message' => 'Erreur base de données: ' . $msg], 500);
-        } catch (Throwable $e) {
+        } catch (\Illuminate\Validation\ValidationException $e) {
+                throw $e;
+            } catch (Throwable $e) {
             Log::error('CourrierController::bulkStore — exception', [
                 'message' => $e->getMessage(),
                 'exception' => get_class($e),
@@ -471,7 +497,7 @@ class CourrierController extends Controller
         $courrier = Courrier::findOrFail($id);
 
         // Accès autorisé si l'utilisateur a une notification liée à ce courrier
-        $hasNotification = \App\Models\Notification::where('userId', $user->id)
+        $hasNotification = !$user->isSecretaire() && \App\Models\Notification::where('userId', $user->id)
             ->where('relatedId', $id)
             ->exists();
 
@@ -479,7 +505,7 @@ class CourrierController extends Controller
             return response()->json(['message' => 'Accès non autorisé à ce courrier'], 403);
         }
 
-        return response()->json(['data' => $courrier->toArray()]);
+        return response()->json(['data' => array_merge($courrier->toArray(), ['isRead' => DB::table('courrier_reads')->where('courrier_id', $id)->where('user_id', $user->id)->exists()])]);
     }
 
     /**
@@ -497,6 +523,11 @@ class CourrierController extends Controller
             if (!$this->accessService->canUpdateCourrier($user, $courrier)) {
                 return response()->json(['message' => 'Modification non autorisée'], 403);
             }
+            foreach (['numero' => $courrier->numero, 'numeroSysteme' => $courrier->numero, 'numeroOrganisationnel' => $courrier->numero_organisationnel, 'entiteNumerotationId' => $courrier->entite_numerotation_id] as $field => $value) {
+                if ($request->exists($field) && $request->input($field) !== $value) throw \Illuminate\Validation\ValidationException::withMessages([$field => 'Référence immuable après attribution.']);
+            }
+            $request->offsetUnset('enregistrePar');
+
             $validated = $request->validate([
                 'numero' => 'sometimes|string|max:64',
                 'type' => 'sometimes|in:INTERNE,EXTERNE',
@@ -536,7 +567,7 @@ class CourrierController extends Controller
                 return $restrictionError;
             }
             try {
-                $courrier->update($this->mapToSnakeCase($validated));
+                DB::transaction(function()use($courrier,$validated,$user){$locked=Courrier::whereKey($courrier->id)->lockForUpdate()->firstOrFail();if(isset($validated['statut']))app(\App\Services\WorkflowExecutionService::class)->assertCourrierStatus($locked,$validated['statut'],$user);$locked->update($this->mapToSnakeCase($validated));if(isset($validated['priorite'])&&!in_array($locked->statut,['TRAITE','ARCHIVE'],true)){ $steps=\App\Models\WorkflowEtape::where('courrier_id',$locked->id)->lockForUpdate()->get();app(\App\Services\WorkflowExecutionService::class)->refreshTiming($locked,$steps);}});
             } catch (QueryException $e) {
                 $msg = $e->getMessage();
                 if (str_contains($msg, 'Duplicate entry') || str_contains($msg, 'UNIQUE')) {
@@ -547,6 +578,8 @@ class CourrierController extends Controller
                 }
                 Log::error('CourrierController::update — erreur base de données', ['exception' => $msg]);
                 return response()->json(['message' => 'Erreur base de données: ' . $msg], 500);
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                throw $e;
             } catch (Throwable $e) {
                 Log::error('CourrierController::update — exception', ['message' => $e->getMessage()]);
                 $message = config('app.debug') ? $e->getMessage() : 'Erreur lors de la mise à jour du courrier.';
@@ -561,7 +594,7 @@ class CourrierController extends Controller
         // Pas de validate() strict : on prend les entrées et on applique des défauts pour accepter toute donnée partielle
         $this->authorize('creer-courrier');
         $input = $request->only([
-            'numero', 'type', 'sens', 'dateReception', 'dateEnregistrement', 'expediteur', 'destinataire', 'objet',
+            'entiteNumerotationId', 'numero', 'type', 'sens', 'dateReception', 'dateEnregistrement', 'expediteur', 'destinataire', 'objet',
             'priorite', 'statut', 'enregistrePar', 'direction', 'service', 'fichier', 'extraFields',
         ]);
         $type = in_array($input['type'] ?? null, ['INTERNE', 'EXTERNE']) ? ($input['type'] ?? 'EXTERNE') : 'EXTERNE';
@@ -577,14 +610,14 @@ class CourrierController extends Controller
         $dateEnregistrement = isset($input['dateEnregistrement']) && $input['dateEnregistrement']
             ? (is_string($input['dateEnregistrement']) ? \Carbon\Carbon::parse($input['dateEnregistrement']) : $input['dateEnregistrement'])
             : now();
-        $enregistrePar = isset($input['enregistrePar']) && trim((string) $input['enregistrePar']) !== '' ? trim((string) $input['enregistrePar']) : $user->id;
+        $enregistrePar = $user->id;
         $expediteur = isset($input['expediteur']) && trim((string) $input['expediteur']) !== '' ? trim((string) $input['expediteur']) : 'Non renseigné';
         $destinataire = isset($input['destinataire']) && trim((string) $input['destinataire']) !== '' ? trim((string) $input['destinataire']) : 'Non renseigné';
         $objet = isset($input['objet']) && trim((string) $input['objet']) !== '' ? trim((string) $input['objet']) : 'Sans objet';
-        $numero = $numero ?? $this->generateNumero($type);
+        $numero = null;
 
         $priorite = in_array($input['priorite'] ?? null, ['BASSE', 'NORMALE', 'HAUTE', 'URGENTE']) ? ($input['priorite'] ?? 'NORMALE') : 'NORMALE';
-        $statut = isset($input['statut']) && trim((string) $input['statut']) !== '' ? trim((string) $input['statut']) : 'ENREGISTRE';
+        $statut = 'ENREGISTRE';
         $direction = isset($input['direction']) && trim((string) $input['direction']) !== '' ? trim((string) $input['direction']) : null;
         $service = isset($input['service']) && trim((string) $input['service']) !== '' ? trim((string) $input['service']) : null;
         $fichier = isset($input['fichier']) && trim((string) $input['fichier']) !== '' ? trim((string) $input['fichier']) : null;
@@ -601,6 +634,7 @@ class CourrierController extends Controller
         try {
             $courrier = Courrier::create([
                 'id' => $id,
+                'entite_numerotation_id' => $input['entiteNumerotationId'] ?? null,
                 'numero' => $numero,
                 'type' => $type,
                 'sens' => $sens,
@@ -634,7 +668,9 @@ class CourrierController extends Controller
             }
             Log::error('CourrierController::update (create) — erreur base de données', ['exception' => $msg]);
             return response()->json(['message' => 'Erreur base de données: ' . $msg], 500);
-        } catch (Throwable $e) {
+        } catch (\Illuminate\Validation\ValidationException $e) {
+                throw $e;
+            } catch (Throwable $e) {
             Log::error('CourrierController::update (create) — exception à l\'insertion', [
                 'message' => $e->getMessage(),
                 'exception' => get_class($e),
@@ -689,7 +725,7 @@ class CourrierController extends Controller
             'statut' => 'required|string|in:ENREGISTRE,EN_ATTENTE_DG,ORIENTE_DG,ORIENTE_DIRECTEUR,EN_TRAITEMENT,ASSIGNE,TRAITE,ARCHIVE',
         ]);
 
-        $courrier->update(['statut' => $validated['statut']]);
+        DB::transaction(function()use($courrier,$validated,$user){$locked=Courrier::whereKey($courrier->id)->lockForUpdate()->firstOrFail();app(\App\Services\WorkflowExecutionService::class)->assertCourrierStatus($locked,$validated['statut'],$user);$locked->update(['statut'=>$validated['statut']]);});
         $this->clearCourrierCache($user);
 
         Log::info('[updateStatut] Statut mis à jour', ['statut_apres' => $courrier->fresh()->statut]);
@@ -724,6 +760,7 @@ class CourrierController extends Controller
      */
     private function clearCourrierCache($user): void
     {
+        Cache::forever('courriers_cache_version', (string) \Illuminate\Support\Str::uuid());
         // Invalider les clés sans filtre (hash de chaîne vide)
         $emptyHash = md5('');
         Cache::forget("courriers_all:{$emptyHash}");
@@ -738,7 +775,7 @@ class CourrierController extends Controller
 
     /**
      * Sécurité (C4) : le seul format de numéro accepté comme valeur explicite est la
-     * séquence officielle INT/EXT-AAAA-NNNN (générée par generateNumero()). Les valeurs
+     * séquence officielle INT/EXT-AAAA-NNNN (attribuée par le registre serveur). Les valeurs
      * vides/null sont acceptées (le système génère). Tout le reste — notamment les
      * numéros générés côté client (INT-2026-<ms>-<aléatoire>) — est rejeté.
      */
@@ -751,27 +788,7 @@ class CourrierController extends Controller
         if ($numero === '') {
             return true;
         }
-        return (bool) preg_match('/^(INT|EXT)-\d{4}-\d{4}$/', $numero);
-    }
-
-    private function generateNumero(string $type): string
-    {
-        $annee = now()->year;
-        $prefix = $type === 'INTERNE' ? 'INT' : 'EXT';
-        $pattern = $prefix . '-' . $annee . '-%';
-
-        // Verrouiller la dernière ligne du type pour empêcher les lectures concurrentes
-        $last = Courrier::where('type', $type)
-            ->where('numero', 'like', $pattern)
-            ->orderBy('id', 'desc')
-            ->lockForUpdate()
-            ->value('numero');
-
-        $sequence = 1;
-        if ($last && preg_match('/-(\d+)$/', $last, $m)) {
-            $sequence = (int) $m[1] + 1;
-        }
-        return sprintf('%s-%d-%04d', $prefix, $annee, $sequence);
+        return (bool) preg_match('/^(INT|EXT)-\d{4}-\d{4,}$/', $numero);
     }
 
     private function validateOrganisationManagerPayload(User $user, array $payload): ?JsonResponse

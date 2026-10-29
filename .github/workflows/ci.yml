@@ -1,0 +1,42 @@
+name: API integration checks
+on: [push, pull_request]
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test-only-ci
+          MYSQL_DATABASE: courrier_ci_test
+        ports: ['3306:3306']
+        options: --health-cmd="mysqladmin ping -ptest-only-ci" --health-interval=10s --health-retries=10
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: courrier_ci_test
+      DB_USERNAME: root
+      DB_PASSWORD: test-only-ci
+      CACHE_DRIVER: file
+      QUEUE_CONNECTION: sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, mbstring, xml, curl, gd
+      - run: composer install --no-interaction --prefer-dist
+      - run: cp .env.example .env && php artisan key:generate && php artisan jwt:secret && php artisan migrate --force
+      - run: |
+          php -S 127.0.0.1:18082 -t public public/index.php > /tmp/api-numbering.log 2>&1 &
+          php -S 127.0.0.1:18084 -t public public/index.php > /tmp/api-workspace.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:18084/api/health && break || sleep 1; done
+          php tests/numbering-integration.php | tee /tmp/numbering-tests.log
+          grep -q "ALL NUMBERING INTEGRATION TESTS PASSED" /tmp/numbering-tests.log
+          php tests/communications-integration.php | tee /tmp/communications-tests.log
+          grep -q "ALL COMMUNICATIONS TESTS PASSED" /tmp/communications-tests.log
+          php tests/workspace-integration.php | tee /tmp/workspace-tests.log
+          grep -q "ALL WORKSPACE TESTS PASSED" /tmp/workspace-tests.log

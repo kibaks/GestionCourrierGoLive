@@ -28,6 +28,7 @@ class ConfigController extends Controller
         }
         $default = $this->getDefaultForKey($key);
         $value = Config::getValue($key, $default);
+        if ($key === 'general') $value = \App\Services\CommunicationSettings::publicValue($value);
         return response()->json(['data' => $value, 'key' => $key]);
     }
 
@@ -37,6 +38,7 @@ class ConfigController extends Controller
     public function update(Request $request, string $key): JsonResponse
     {
         $this->authorize('modifier-permissions');
+        if ($key === 'general') abort_unless(auth()->user()->isSuperAdmin(), 403);
         if (!in_array($key, self::ALLOWED_KEYS, true)) {
             return response()->json(['message' => 'Clé de config non autorisée'], 400);
         }
@@ -46,7 +48,12 @@ class ConfigController extends Controller
         } else {
             $value = $request->all();
         }
+        if ($key === 'general') {
+            // Transport credentials have a dedicated validated, write-only API.
+            $value = array_replace($value, \App\Services\CommunicationSettings::get());
+        }
         Config::setValue($key, $value);
+        if ($key === 'general') return response()->json(['data' => \App\Services\CommunicationSettings::publicValue(Config::getValue($key)), 'key' => $key]);
         return response()->json(['data' => Config::getValue($key), 'key' => $key]);
     }
 

@@ -69,8 +69,9 @@ class UsersController extends Controller
                 return [
                     'id' => $c->id,
                     'objet' => $c->objet,
-                    'reference' => $c->numero,
+                    'reference' => $c->numero_organisationnel ?: $c->numero,
                     'numero' => $c->numero,
+                    'numeroOrganisationnel' => $c->numero_organisationnel,
                     'expediteur' => $c->expediteur,
                     'date' => $c->date_enregistrement,
                     'statut' => $c->statut,
@@ -198,6 +199,7 @@ class UsersController extends Controller
             'direction' => $user->direction,
             'service' => $user->service,
             'entiteId' => $user->entite_id,
+            'estSecrétaireDG' => $user->role === 'SECRETAIRE' && \App\Models\EntiteOrganisationnelle::whereKey($user->entite_id)->where('type','direction_generale')->where('nom','Direction Générale')->exists(),
             'actif' => $user->actif,
             'photoUrl' => $user->photo_url,
             'twoFactorEnabled' => $user->two_factor_confirmed_at !== null,

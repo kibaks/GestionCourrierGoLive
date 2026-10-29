@@ -26,6 +26,7 @@ class Config extends Model
 
     public static function setValue(string $key, $value): void
     {
+        if ($key === 'general' && is_array($value)) $value = \App\Services\CommunicationSettings::protect($value);
         self::updateOrCreate(['key' => $key], ['value' => $value]);
     }
 }

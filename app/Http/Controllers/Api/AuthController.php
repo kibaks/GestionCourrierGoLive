@@ -51,7 +51,7 @@ class AuthController extends Controller
     public function completeTwoFactorLogin(Request $request, TotpService $totp): JsonResponse
     {
         $validated = $request->validate(['challenge' => 'required|string', 'code' => 'required|string|max:32']);
-        $userId = Cache::pull("two-factor-login:{$validated['challenge']}");
+        $userId = Cache::get("two-factor-login:{$validated['challenge']}");
         $user = $userId ? User::find($userId) : null;
         if (!$user || !$user->actif) return response()->json(['message' => 'Validation expirée ou invalide.'], 401);
 
@@ -71,6 +71,7 @@ class AuthController extends Controller
             }
         }
         if (!$valid) return response()->json(['message' => 'Code de sécurité invalide.'], 422);
+        if (!Cache::pull("two-factor-login:{$validated['challenge']}")) return response()->json(['message' => 'Validation expirée.'], 401);
         return $this->authenticatedResponse($user);
     }
 
@@ -80,34 +81,7 @@ class AuthController extends Controller
      */
     public function register(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => ['required', 'confirmed', Password::defaults()],
-            'role' => 'nullable|in:SUPER_ADMIN,DIRECTEUR_GENERAL,SECRETAIRE,DIRECTEUR,CHEF_DIVISION,CHEF_SERVICE,CHEF_BUREAU,AGENT',
-            'direction' => 'nullable|string|max:255',
-            'service' => 'nullable|string|max:255',
-        ]);
-
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-            'role' => $validated['role'] ?? 'AGENT',
-            'direction' => $validated['direction'] ?? null,
-            'service' => $validated['service'] ?? null,
-            'actif' => true,
-        ]);
-
-        $token = JWTAuth::fromUser($user);
-
-        return response()->json([
-            'message' => 'Utilisateur créé',
-            'token' => $token,
-            'token_type' => 'bearer',
-            'expires_in' => config('jwt.ttl') ? config('jwt.ttl') * 60 : 3600,
-            'user' => $this->userToArray($user),
-        ], 201);
+        return response()->json(['message' => 'La création des comptes est réservée à votre administrateur.'], 403);
     }
 
     /**
@@ -280,6 +254,7 @@ class AuthController extends Controller
             'direction' => $user->direction,
             'service' => $user->service,
             'entiteId' => $user->entite_id,
+            'estSecrétaireDG' => $user->role === 'SECRETAIRE' && \App\Models\EntiteOrganisationnelle::whereKey($user->entite_id)->where('type','direction_generale')->where('nom','Direction Générale')->exists(),
             'actif' => $user->actif,
             'photoUrl' => $user->photo_url,
             'twoFactorEnabled' => $user->two_factor_confirmed_at !== null,
