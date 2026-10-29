@@ -62,6 +62,13 @@ Route::post('auth/refresh', [AuthController::class, 'refresh'])->middleware('thr
 
 // ----- Toutes les routes suivantes protégées JWT -----
 Route::middleware('auth:api')->group(function () {
+    Route::get('organisation/progress', [\App\Http\Controllers\Api\OrganisationProgressController::class, 'index']);
+    Route::get('parametres/procedures', [\App\Http\Controllers\Api\ProcedureSettingsController::class, 'show']);
+    Route::put('parametres/procedures', [\App\Http\Controllers\Api\ProcedureSettingsController::class, 'save']);
+    Route::post('parametres/procedures/preview', [\App\Http\Controllers\Api\ProcedureSettingsController::class, 'preview']);
+    Route::get('courriers/{courrierId}/circuit', [\App\Http\Controllers\Api\WorkflowCircuitController::class, 'show']);
+    Route::post('courriers/{courrierId}/circuit', [\App\Http\Controllers\Api\WorkflowCircuitController::class, 'store']);
+
     Route::get('workspace/registre', [\App\Http\Controllers\Api\RegistreController::class, 'index']);
     Route::put('workspace/registre/{id}', [\App\Http\Controllers\Api\RegistreController::class, 'update']);
     Route::get('workspace/courriers', [\App\Http\Controllers\Api\WorkspaceController::class, 'index']);
@@ -112,8 +119,6 @@ Route::middleware('auth:api')->group(function () {
     // Sous-routes courriers (avant apiResource pour priorité sur /courriers/{id}/...)
     Route::get('courriers/{courrierId}/assignations', [AssignationsController::class, 'indexByCourrier']);
     Route::get('courriers/{courrierId}/annotations', [AnnotationsController::class, 'index']);
-    Route::get('courriers/{courrierId}/circuit', [\App\Http\Controllers\Api\WorkflowCircuitController::class, 'show']);
-    Route::post('courriers/{courrierId}/circuit', [\App\Http\Controllers\Api\WorkflowCircuitController::class, 'store']);
     Route::get('courriers/{courrierId}/workflow-etapes', [WorkflowEtapesController::class, 'index']);
 
     // Import en lot (avant apiResource pour que "bulk" ne soit pas pris pour un id)
