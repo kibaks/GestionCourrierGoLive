@@ -12,7 +12,7 @@ interface AuthContextType {
   locked: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
   completeTwoFactorLogin: (challenge: string, code: string) => Promise<boolean>;
-  loginWithGoogle: (credential: string) => Promise<boolean>;
+  loginWithGoogle: (credential: string) => Promise<LoginResult>;
   updateCurrentUser: (user: Utilisateur) => void;
   logout: () => void;
   unlockWithPassword: (password: string) => Promise<boolean>;
@@ -283,8 +283,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return result.success;
   };
 
-  const loginWithGoogle = async (_credential: string): Promise<boolean> => {
-    throw new Error('La connexion Google doit être validée par l’API Laravel avant activation.');
+  const loginWithGoogle = async (credential: string): Promise<LoginResult> => {
+    const response = await laravelApiService.loginWithGoogle(credential);
+    if (response.twoFactorRequired && response.challenge) return { success: false, twoFactorRequired: true, challenge: response.challenge };
+    return { success: response.token ? await establishSession(response.token) : false };
   };
 
   const updateCurrentUser = (nextUser: Utilisateur): void => {

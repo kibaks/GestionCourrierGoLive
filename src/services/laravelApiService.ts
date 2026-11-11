@@ -1112,6 +1112,19 @@ class LaravelApiService {
     };
   }
 
+  async loginWithGoogle(credential: string): Promise<{ token?: string; twoFactorRequired?: boolean; challenge?: string }> {
+    if (!this.baseUrl) throw new Error('La connexion est momentanément indisponible.');
+    const res = await fetch(`${this.baseUrl}/api/auth/google`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ credential }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || 'La connexion Google n’a pas pu être validée.');
+    return { token: typeof data.token === 'string' ? data.token : undefined,
+      twoFactorRequired: data.twoFactorRequired === true,
+      challenge: typeof data.challenge === 'string' ? data.challenge : undefined };
+  }
+
   async completeTwoFactorLogin(challenge: string, code: string): Promise<string | null> {
     if (!this.baseUrl) return null;
     const res = await fetch(`${this.baseUrl}/api/auth/two-factor`, {
