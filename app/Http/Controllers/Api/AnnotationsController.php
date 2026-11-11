@@ -224,6 +224,14 @@ class AnnotationsController extends Controller
             return response()->json(['message' => 'Accès non autorisé'], 403);
         }
 
+        if (empty($validated['workflowEtapeId'])) {
+            $steps=WorkflowEtape::where('courrier_id',$courrier->id)->get();
+            $current=$steps->first(fn($step)=>$step->assigne_a===$user->id && in_array($step->statut,['EN_ATTENTE','EN_COURS'],true) && app(\App\Services\WorkflowExecutionService::class)->readiness($step,$steps)['ready']);
+            if (!$current && $steps->isEmpty()) {
+                $current=WorkflowEtape::create(['courrier_id'=>$courrier->id,'etape'=>'Annotation du document','assigne_a'=>$user->id,'statut'=>'EN_COURS','date_debut'=>now(),'cree_par'=>$user->id,'ordre'=>1,'est_condition'=>false,'declencheur'=>['type'=>'IMMEDIAT']]);
+            }
+            $validated['workflowEtapeId']=$current?->id;
+        }
         $annotation = Annotation::create([
             'courrier_id' => $validated['courrierId'],
             'created_by' => $user->id,
@@ -376,6 +384,7 @@ class AnnotationsController extends Controller
             return response()->json(['message' => 'Seul l\'auteur ou le Directeur Général peut supprimer cette annotation'], 403);
         }
 
+        abort_if(WorkflowEtape::where('courrier_id',$courrier->id)->where('declencheur->orientation->annotationId',$annotation->id)->exists(),409,'Cette annotation justifie une orientation et doit rester dans l’historique.');
         // Supprime aussi les réponses du fil
         Annotation::where('parent_id', $annotation->id)->delete();
         $annotation->delete();

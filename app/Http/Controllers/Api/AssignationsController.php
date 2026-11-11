@@ -63,39 +63,24 @@ class AssignationsController extends Controller
      * Créer une assignation (si accès au courrier + rôle autorisé).
      * POST /api/assignations
      */
+    public function orientationOptions(string $courrierId): JsonResponse
+    {
+        $this->authorize('voir-courriers');
+        return response()->json(['data'=>app(\App\Services\CourrierOrientationService::class)->options(Auth::user(),Courrier::findOrFail($courrierId))]);
+    }
+
     public function store(Request $request): JsonResponse
     {
-        $this->authorize('assigner-courrier');
-        $user = Auth::user();
-
-        $validated = $request->validate([
-            'courrierId' => 'required|uuid|exists:courriers,id',
-            // assigneA peut être un identifiant applicatif (non-UUID) ; ne pas imposer le format UUID ici
-            'assigneA' => 'required|uuid|exists:users,id',
-            'dateEcheance' => 'nullable|date',
-            'instructions' => 'nullable|string',
-            'statut' => 'nullable|in:EN_ATTENTE,EN_COURS',
+        $validated=$request->validate([
+            'courrierId'=>'required|uuid|exists:courriers,id',
+            'assigneA'=>'required|uuid|exists:users,id',
+            'dgAnnotationId'=>'nullable|uuid',
+            'dateEcheance'=>'nullable|date|after:now',
+            'instructions'=>'nullable|string|max:20000',
+            'statut'=>'nullable|in:EN_ATTENTE',
         ]);
-
-        $courrier = Courrier::findOrFail($validated['courrierId']);
-        if (!$this->accessService->canUpdateCourrier($user, $courrier)) {
-            return response()->json(['message' => 'Non autorisé à assigner ce courrier'], 403);
-        }
-
-        $target=\App\Models\User::whereKey($validated['assigneA'])->where('actif',true)->first();
-        if(!$target) return response()->json(['message'=>'Le destinataire doit être un utilisateur actif.'],422);
-        $entities=app(\App\Services\OrganisationWorkflowService::class)->entities($user);
-        abort_unless($target->id===$user->id||in_array($user->role,['SUPER_ADMIN'],true)||$entities->contains('id',$target->entite_id),403,'Destinataire hors de votre périmètre.');
-        $assignation=\Illuminate\Support\Facades\DB::transaction(function()use($courrier,$validated,$user){
-            $locked=Courrier::whereKey($courrier->id)->lockForUpdate()->firstOrFail();
-            abort_if(in_array($locked->statut,['TRAITE','ARCHIVE'],true),409,'Le courrier est clôturé.');
-            if(\App\Models\WorkflowEtape::where('courrier_id',$locked->id)->where('declencheur->circuit','ARMP')->exists()&&!\App\Models\WorkflowEtape::where('courrier_id',$locked->id)->where('assigne_a',$validated['assigneA'])->exists())abort(409,'Utilisez les affectations du circuit protégé.');
-            if($locked->statut==='ENREGISTRE')$locked->update(['statut'=>'ASSIGNE']);
-            \Illuminate\Support\Facades\Cache::forever('courriers_cache_version',(string)\Illuminate\Support\Str::uuid());
-            return Assignation::firstOrCreate(['courrier_id'=>$courrier->id,'assigne_a'=>$validated['assigneA']],['assigne_par'=>$user->id,'date_assignation'=>now(),'date_echeance'=>$validated['dateEcheance']??null,'statut'=>$validated['statut']??'EN_ATTENTE','instructions'=>$validated['instructions']??null]);
-        },3);
-
-        return response()->json(['data' => $assignation->toArray()], 201);
+        $assignment=app(\App\Services\CourrierOrientationService::class)->orient(Auth::user(),Courrier::findOrFail($validated['courrierId']),$validated);
+        return response()->json(['data'=>$assignment->toArray()],201);
     }
 
     /**

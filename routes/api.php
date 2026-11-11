@@ -117,6 +117,7 @@ Route::middleware('auth:api')->group(function () {
     Route::delete('scan-preview/{previewId}', [ScanPreviewController::class, 'destroy']);
 
     // Sous-routes courriers (avant apiResource pour priorité sur /courriers/{id}/...)
+    Route::get('courriers/{courrierId}/orientation-options', [AssignationsController::class, 'orientationOptions']);
     Route::get('courriers/{courrierId}/assignations', [AssignationsController::class, 'indexByCourrier']);
     Route::get('courriers/{courrierId}/annotations', [AnnotationsController::class, 'index']);
     Route::get('courriers/{courrierId}/workflow-etapes', [WorkflowEtapesController::class, 'index']);

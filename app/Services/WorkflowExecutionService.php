@@ -120,6 +120,7 @@ class WorkflowExecutionService
         if($relevant->isEmpty())return;
         $this->refreshTiming($courrier,$steps);
         $done=$relevant->every(fn($step)=>$step->statut==='TERMINE');
+        if($steps->contains(fn($step)=>($step->declencheur['circuit']??null)==='HIERARCHIQUE') && !$steps->contains(fn($step)=>($step->declencheur['phase']??null)==='CLOTURE'))$done=false;
         $started=$relevant->contains(fn($step)=>in_array($step->statut,['EN_COURS','TERMINE','REJETE'],true));
         $courrier->statut=$done?'TRAITE':($started?'EN_TRAITEMENT':'ASSIGNE');$courrier->save();\Illuminate\Support\Facades\Cache::forever('courriers_cache_version',(string)Str::uuid());
         if($done) Assignation::where('courrier_id',$courrier->id)->update(['statut'=>'TERMINE']);
@@ -153,6 +154,7 @@ class WorkflowExecutionService
             $allowed=['statut','commentaire','dateDebut','dateFin','decision','annotation'];
             if(!$manager&&array_diff(array_keys($data),$allowed))abort(403,'L’assigné peut uniquement exécuter sa tâche et ajouter un commentaire.');
             if(isset($data['responses']))$this->fail('Utilisez l’ajout de réponse pour préserver l’historique.');
+            if(isset($data['assigneA']) && $data['assigneA']!==$step->assigne_a) $this->fail('Utilisez l’orientation du courrier pour changer de responsable.');
             $structural=array_intersect(array_keys($data),['assigneA','etape','ordre','declencheur','estCondition','actionSiVrai','actionSiFaux','dureeEstimee']);
             if($structural&&($step->declencheur['circuit']??null)==='ARMP')$this->fail('Les étapes du circuit généré sont protégées ; utilisez les actions de traitement ou de correction.');
             if($structural&&$step->statut!=='EN_ATTENTE')$this->fail('Une étape démarrée ne peut plus être restructurée.');
@@ -178,13 +180,7 @@ class WorkflowExecutionService
                     $ready=$this->readiness($step,$steps);if(!$ready['ready'])$this->fail($ready['reason']);
                     if(in_array($to,['EN_COURS','TERMINE'],true)) {
                         $annotation=Annotation::where('courrier_id',$courrier->id)->where('workflow_etape_id',$step->id)->exists();
-                        if(!$annotation) {
-                            $content=trim($data['annotation']??'');
-                            if($content==='')$this->fail('Rédigez l’annotation de cette tâche avant son exécution.');
-                            if(mb_strlen($content)>20000)$this->fail('L’annotation ne peut pas dépasser 20 000 caractères.');
-                            $policy=app(AnnotationActionPolicy::class);$policy->assert($actor,$courrier);$policy->validateLinks($actor,$courrier,['workflowEtapeId'=>$step->id]);
-                            Annotation::create(['courrier_id'=>$courrier->id,'created_by'=>$actor->id,'workflow_etape_id'=>$step->id,'contenu'=>$content,'type'=>'NOTE','kind'=>'COMMENTAIRE','statut'=>'OUVERT']);
-                        }
+                        if(!$annotation)$this->fail('Ajoutez votre annotation dans « Visualiser et annoter » avant de démarrer cette tâche.');
                     }
                     if($to==='TERMINE'){
                         $report=trim($data['commentaire']??'');
