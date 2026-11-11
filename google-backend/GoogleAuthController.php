@@ -32,6 +32,8 @@ class GoogleAuthController extends AuthController
         }
         try {
             $claims = $this->verifyCredential($data['credential'], $clientId);
+        } catch (\UnexpectedValueException|\DomainException|\InvalidArgumentException $error) {
+            return response()->json(['message' => 'Connexion Google invalide ou expirée.'], 401);
         } catch (\Throwable $error) {
             return response()->json(['message' => 'La vérification Google est momentanément indisponible.'], 503);
         }
