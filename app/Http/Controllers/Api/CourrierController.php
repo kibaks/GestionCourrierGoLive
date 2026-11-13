@@ -161,8 +161,7 @@ class CourrierController extends Controller
         $courrier = Courrier::findOrFail($id);
         $hasNotification = !$user->isSecretaire() && \App\Models\Notification::where('userId', $user->id)->where('relatedId', $id)->exists();
         abort_unless($hasNotification || $this->accessService->canViewCourrier($user, $courrier), 403);
-        DB::table('courrier_reads')->insertOrIgnore(['courrier_id' => $id, 'user_id' => $user->id, 'read_at' => now()]);
-        return response()->json(['data' => ['id' => $id, 'isRead' => true, 'readAt' => DB::table('courrier_reads')->where('courrier_id', $id)->where('user_id', $user->id)->value('read_at')]]);
+        return response()->json(['data'=>app(\App\Services\CourrierOpeningReceiptService::class)->record($courrier,$user)]);
     }
 
     /**

@@ -67,7 +67,22 @@ class OrganisationWorkflowService
                 abort(409,'Un workflow existe déjà : il est conservé. Utilisez ses étapes existantes.');
             }
             if(in_array($courrier->statut,['TRAITE','ARCHIVE'],true))$this->fail('Le courrier est déjà clôturé ou archivé.');
-            $plan=$procedure?ProcedureSettings::preview($procedure,$actor,$courrier->priorite):$this->plan($actor,$courrier,$entityId,$agentId);$previous=null;$circuit=(string)Str::uuid();
+            $plan=$procedure?ProcedureSettings::preview($procedure,$actor,$courrier->priorite):$this->plan($actor,$courrier,$entityId,$agentId);
+            if($courrier->type==='INTERNE')$plan=array_values(array_filter($plan,fn($item)=>in_array($item['phase'],['ORIENTATION','CLOTURE'],true)));
+            $origin=$actor->isSecretaire()?$this->access->secretaryRoot($actor):null;
+            if($courrier->type==='INTERNE' && $origin?->type==='direction') {
+                $director=User::whereKey($origin->responsable_id)->where('actif',true)->first();
+                $dgStep=collect($plan)->firstWhere('phase','ORIENTATION');
+                $dgUnit=EntiteOrganisationnelle::where('type','direction_generale')->where('responsable_id',$dgStep['assigneA']??null)->where('actif',true)->first();
+                $dgSecretary=$dgUnit?User::where('role','SECRETAIRE')->where('entite_id',$dgUnit->id)->where('actif',true)->first():null;
+                if(!$director||!$dgSecretary)$this->fail('Le circuit interne requiert le directeur émetteur et le secrétariat DG actifs.');
+                $plan=array_merge([
+                    ['etape'=>'Orientation du secrétariat émetteur','assigneA'=>$actor->id,'phase'=>'SECRETARIAT_EMETTEUR'],
+                    ['etape'=>'Traitement et transmission à la Direction générale','assigneA'=>$director->id,'phase'=>'TRANSMISSION_DIRECTION'],
+                    ['etape'=>'Réception et orientation du secrétariat DG','assigneA'=>$dgSecretary->id,'phase'=>'RECEPTION_SECRETARIAT']
+                ],$plan);
+            }
+            $previous=null;$circuit=(string)Str::uuid();
             foreach($plan as$index=>$item) {
                 $step=WorkflowEtape::create(['courrier_id'=>$courrier->id,'etape'=>$item['etape'],'assigne_a'=>$item['assigneA'],'statut'=>'EN_ATTENTE','cree_par'=>$actor->id,'ordre'=>$index+1,'est_condition'=>false,'duree_estimee'=>$item['dureeEstimee']??null,'declencheur'=>['type'=>$previous?'APRES_ETAPE':'IMMEDIAT','etapePrecedenteId'=>$previous,'circuit'=>'ARMP','circuitId'=>$circuit,'phase'=>$item['phase'],'procedureId'=>$procedure['id']??null,'procedureName'=>$procedure['nom']??null,'procedureVersion'=>$procedure['_version']??null,'hoursByUrgency'=>$item['hoursByUrgency']??null,'circulation'=>$procedure['circulation']??['notifyNext'=>true,'deadlineOnReopen'=>'CONSERVER'],'targetEntityId'=>$entityId,'planKey'=>$key]]);
                 $this->execution->ensureAssignment($courrier,$step,$actor);$previous=$step->id;

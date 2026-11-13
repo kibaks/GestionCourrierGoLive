@@ -34,7 +34,7 @@ class CourrierAccessService
         do{$count=count($ids);foreach($entities as$e)if(in_array($e->parent_id,$ids,true)&&!in_array($e->id,$ids,true))$ids[]=$e->id;}while($count!==count($ids));
         $names=$entities->whereIn('id',$ids)->pluck('nom')->merge($ids)->all();
         return $query->where(function(Builder$q)use($names,$ids,$user){
-            $q->whereIn('direction',$names)->orWhere(function(Builder$blank)use($names,$ids,$user){
+            $q->whereHas('workflowEtapes',fn($assigned)=>$assigned->where('assigne_a',$user->id))->orWhereIn('direction',$names)->orWhere(function(Builder$blank)use($names,$ids,$user){
                 $blank->where(fn($missing)=>$missing->whereNull('direction')->orWhere('direction',''));
                 $blank->where(function($scoped)use($names,$ids,$user){
                     $scoped->whereIn('service',$names)->orWhereHas('workflowEtapes',fn($steps)=>$steps->whereIn('declencheur->targetEntityId',$ids));
