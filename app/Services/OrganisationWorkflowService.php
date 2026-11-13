@@ -39,14 +39,12 @@ class OrganisationWorkflowService
         $secretary=User::where('role','SECRETAIRE')->where('entite_id',$dg->id)->where('actif',true)->orderBy('created_at')->first();
         if(!$secretary)$this->fail('Rattachez un secrétariat actif à la Direction Générale.');
         $plan=[];$add=function(string$name,User$person,string$phase,?string$unit=null)use(&$plan){$plan[]=['etape'=>$name,'assigneA'=>$person->id,'assigneNom'=>$person->name,'role'=>$person->role,'phase'=>$phase,'entiteNom'=>$unit];};
-        $validator=null;
         foreach($path as$entity) {
             $person=$entity->responsable_id?User::whereKey($entity->responsable_id)->where('actif',true)->first():null;
             if(!$person)$this->fail('Responsable actif manquant : '.$entity->nom);
             if($person->entite_id!==$entity->id)$this->fail('Rattachement du responsable à corriger : '.$entity->nom);
             $phase=$entity->id===$dg->id?'ORIENTATION':'INSTRUCTION';
             $add(($phase==='ORIENTATION'?'Orientation DG':'Instruction — '.$entity->nom),$person,$phase,$entity->nom);
-            if($person->role==='DIRECTEUR')$validator=$person;
         }
         if($agentId) {
             $agent=User::whereKey($agentId)->where('actif',true)->where('role','AGENT')->first();
@@ -55,8 +53,6 @@ class OrganisationWorkflowService
             if(!in_array($agent->entite_id,$ids,true))$this->fail('L’agent doit appartenir à l’unité destinataire ou à ses unités rattachées.');
             if(end($plan)['assigneA']!==$agent->id)$add('Analyse et préparation de la réponse',$agent,'EXECUTION',$all->get($agent->entite_id)?->nom);
         }
-        $validator??=User::whereKey($dg->responsable_id)->where('actif',true)->first();
-        $add('Validation du traitement et de la réponse',$validator,'VALIDATION',$validator->direction);
         $add('Clôture et classement du courrier',$secretary,'CLOTURE',$dg->nom);
         return $plan;
     }

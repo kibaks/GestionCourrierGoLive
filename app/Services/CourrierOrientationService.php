@@ -96,9 +96,7 @@ class CourrierOrientationService
                 $root=$this->access->secretaryRoot($actor);
                 $secretary=$root?User::where('role','SECRETAIRE')->where('actif',true)->get()->first(fn($s)=>$this->access->secretaryRoot($s)?->id===$root->id):null;
                 abort_unless($secretary,422,'Rattachez un secrétaire actif à cette direction avant de transmettre le courrier.');
-                $validation=WorkflowEtape::create(['courrier_id'=>$courrier->id,'etape'=>'Validation du traitement','assigne_a'=>$actor->id,'statut'=>'EN_ATTENTE','cree_par'=>$actor->id,'ordre'=>$destination->ordre+1,'est_condition'=>false,'declencheur'=>['type'=>'APRES_ETAPE','etapePrecedenteId'=>$destination->id,'circuit'=>'HIERARCHIQUE','phase'=>'VALIDATION']]);
-                WorkflowEtape::create(['courrier_id'=>$courrier->id,'etape'=>'Clôture et classement','assigne_a'=>$secretary->id,'statut'=>'EN_ATTENTE','cree_par'=>$actor->id,'ordre'=>$destination->ordre+2,'est_condition'=>false,'declencheur'=>['type'=>'APRES_ETAPE','etapePrecedenteId'=>$validation->id,'circuit'=>'HIERARCHIQUE','phase'=>'CLOTURE']]);
-                $this->execution->ensureAssignment($courrier,$validation,$actor);
+                WorkflowEtape::create(['courrier_id'=>$courrier->id,'etape'=>'Clôture et classement','assigne_a'=>$secretary->id,'statut'=>'EN_ATTENTE','cree_par'=>$actor->id,'ordre'=>$destination->ordre+1,'est_condition'=>false,'declencheur'=>['type'=>'APRES_ETAPE','etapePrecedenteId'=>$destination->id,'circuit'=>'HIERARCHIQUE','phase'=>'CLOTURE']]);
                 $last=WorkflowEtape::where('courrier_id',$courrier->id)->where('declencheur->phase','CLOTURE')->latest()->first();
                 $this->execution->ensureAssignment($courrier,$last,$actor);
             }

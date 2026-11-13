@@ -10,7 +10,7 @@ $c2=App\Models\Courrier::withoutEvents(fn()=>App\Models\Courrier::create(['type'
 $plan=app(App\Services\OrganisationWorkflowService::class)->plan($dg,$c2,$unit->id,null,true);
 check(!collect($plan)->contains('phase','SECRETARIAT'),'initial secretary check removed');
 check(collect($plan)->first()['phase']==='ORIENTATION','DG is the first step');
-check(collect($plan)->contains('phase','VALIDATION'),'final validation retained');
+check(!collect($plan)->contains('phase','VALIDATION'),'no visa in new circuits');
 $source=App\Models\WorkflowEtape::create(['courrier_id'=>$c2->id,'etape'=>'DG','assigne_a'=>$dg->id,'cree_par'=>$dg->id,'statut'=>'EN_ATTENTE','ordre'=>1,'declencheur'=>['type'=>'IMMEDIAT','phase'=>'ORIENTATION']]);
 $visa=App\Models\WorkflowEtape::create(['courrier_id'=>$c2->id,'etape'=>'Visa','assigne_a'=>$dg->id,'cree_par'=>$dg->id,'statut'=>'EN_ATTENTE','ordre'=>2,'declencheur'=>['type'=>'APRES_ETAPE','etapePrecedenteId'=>$source->id,'phase'=>'VALIDATION']]);
 $a=App\Models\Annotation::create(['courrier_id'=>$c2->id,'created_by'=>$dg->id,'workflow_etape_id'=>$source->id,'contenu'=>'Instruction DG','type'=>'NOTE','fichier_id'=>'test']);
