@@ -178,7 +178,7 @@ class WorkflowExecutionService
                 } else {
                     if(!$step->assigne_a||!User::whereKey($step->assigne_a)->where('actif',true)->exists())$this->fail('L’étape doit être affectée à un utilisateur actif.');
                     $ready=$this->readiness($step,$steps);if(!$ready['ready'])$this->fail($ready['reason']);
-                    if(in_array($to,['EN_COURS','TERMINE'],true)) {
+                    if(in_array($to,['EN_COURS','TERMINE'],true) && User::find($step->assigne_a)?->role==='DIRECTEUR_GENERAL' && ($step->declencheur['phase']??null)==='ORIENTATION') {
                         $annotation=Annotation::where('courrier_id',$courrier->id)->where('workflow_etape_id',$step->id)->exists();
                         if(!$annotation)$this->fail('Ajoutez votre annotation dans « Visualiser et annoter » avant de démarrer cette tâche.');
                     }

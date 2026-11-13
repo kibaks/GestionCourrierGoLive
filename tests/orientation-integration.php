@@ -69,5 +69,5 @@ check(app(App\Services\CourrierAccessService::class)->canViewCourrier($secretary
 check(WorkflowEtape::where('courrier_id',$c->id)->where('declencheur->phase','CLOTURE')->exists(),'validation and closure follow execution');
 $noticeQuery=fn()=>Notification::where('relatedId',$c->id);$count=$noticeQuery()->count();$service->orient($director,$c->fresh(),['assigneA'=>$agent->id,'dgAnnotationId'=>$annotation->id]);check($noticeQuery()->count()===$count,'retry sends no duplicate notifications');
 $c->update(['statut'=>'ARCHIVE']);denied(fn()=>$service->orient($secretary,$c->fresh(),['assigneA'=>$director->id]),403);
-if ($existing) DB::rollBack();
+if ($existing && empty($retainOrientationFixtures)) DB::rollBack();
 echo "ORIENTATION TESTS PASSED\n";

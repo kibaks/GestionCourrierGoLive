@@ -6,6 +6,7 @@ use Illuminate\Validation\ValidationException;
 class AnnotationActionPolicy
 {
  public function reason(User$user,Courrier$courrier):?string{
+  if($user->role!=='DIRECTEUR_GENERAL')return 'Les annotations documentaires sont réservées au Directeur général.';
   if(!Gate::forUser($user)->allows('modifier-courrier')||!app(CourrierAccessService::class)->canViewCourrier($user,$courrier))return 'Ce courrier est hors de votre périmètre d’action.';
   if(in_array($courrier->statut,['TRAITE','ARCHIVE'],true))return 'Ce courrier est clôturé : les annotations sont en lecture seule.';
   if($courrier->statut==='ENREGISTRE'||(!Assignation::where('courrier_id',$courrier->id)->exists()&&!WorkflowEtape::where('courrier_id',$courrier->id)->exists()))return 'Orientez ce courrier vers un responsable avant de l’annoter.';

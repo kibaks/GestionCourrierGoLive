@@ -192,6 +192,11 @@ class AnnotationsController extends Controller
             'contenu' => 'required|string',
             'type' => 'required|in:MINUTE,NOTE,COMMENTAIRE',
             'workflowEtapeId' => 'nullable|uuid',
+            'workflowTarget' => 'nullable|array:type,id,nom,typeEntite',
+            'workflowTarget.type' => 'required_with:workflowTarget|in:ENTITE,USER',
+            'workflowTarget.id' => 'required_with:workflowTarget|uuid',
+            'workflowTarget.nom' => 'nullable|string|max:255',
+            'workflowTarget.typeEntite' => 'nullable|string|max:50',
             'fichiers' => 'nullable|array',
             'fichiers.*' => 'string',
             // P1 — annotations sur le document
@@ -249,6 +254,10 @@ class AnnotationsController extends Controller
             'statut' => $validated['statut'] ?? 'OUVERT',
             'decision' => $validated['decision'] ?? null,
         ]);
+
+        if (!empty($validated['workflowTarget']) && !$annotation->parent_id) {
+            app(\App\Services\DgAnnotationRoutingService::class)->route($user,$courrier,$annotation,$validated['workflowTarget']);
+        }
 
         // Notification : une annotation ANCRÉE sur un document posée par le DG / un admin
         // alerte l'enregistreur du courrier + les assignés des étapes ouvertes.
