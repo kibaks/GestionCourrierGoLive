@@ -186,9 +186,9 @@ class CourrierController extends Controller
             'sens' => 'nullable|string|in:ENTRANT,SORTANT',
             'dateReception' => 'required|date',
             'dateEnregistrement' => 'nullable|date',
-            'expediteur' => 'required|string|max:255',
-            'destinataire' => 'required|string|max:255',
-            'objet' => 'required|string',
+            'expediteur' => 'nullable|string|max:255',
+            'destinataire' => 'nullable|string|max:255',
+            'objet' => 'nullable|string',
             'priorite' => 'nullable|in:BASSE,NORMALE,HAUTE,URGENTE',
             'statut' => 'nullable|in:ENREGISTRE',
             'enregistrePar' => 'nullable|string|max:255',
@@ -204,6 +204,8 @@ class CourrierController extends Controller
             'clientRequestId' => 'nullable|string|max:64',
             'entiteNumerotationId' => 'nullable|uuid',
         ]);
+
+        app(\App\Services\CourrierFormValidationService::class)->validate($request->all());
 
         // Idempotence (C3) : replay d'une requête déjà traitée (retry réseau,
         // double clic, replay du fallback front) → renvoyer le courrier existant.
@@ -259,9 +261,9 @@ class CourrierController extends Controller
                         'sens' => $validated['sens'] ?? null,
                         'date_reception' => $validated['dateReception'],
                         'date_enregistrement' => $dateEnregistrement,
-                        'expediteur' => $validated['expediteur'],
-                        'destinataire' => $validated['destinataire'],
-                        'objet' => $validated['objet'],
+                        'expediteur' => $validated['expediteur'] ?? '',
+                        'destinataire' => $validated['destinataire'] ?? '',
+                        'objet' => $validated['objet'] ?? '',
                         'priorite' => $this->resolvePriorite($validated['priorite'] ?? null, $validated['extraFields'] ?? null),
                         'statut' => 'ENREGISTRE',
                         'enregistre_par' => $enregistrePar,
@@ -358,9 +360,9 @@ class CourrierController extends Controller
             'courriers.*.sens' => 'nullable|string|in:ENTRANT,SORTANT',
             'courriers.*.dateReception' => 'required|date',
             'courriers.*.dateEnregistrement' => 'nullable|date',
-            'courriers.*.expediteur' => 'required|string|max:255',
-            'courriers.*.destinataire' => 'required|string|max:255',
-            'courriers.*.objet' => 'required|string',
+            'courriers.*.expediteur' => 'nullable|string|max:255',
+            'courriers.*.destinataire' => 'nullable|string|max:255',
+            'courriers.*.objet' => 'nullable|string',
             'courriers.*.priorite' => 'nullable|in:BASSE,NORMALE,HAUTE,URGENTE',
             'courriers.*.statut' => 'nullable|in:ENREGISTRE',
             'courriers.*.enregistrePar' => 'nullable|string|max:255',
@@ -373,6 +375,7 @@ class CourrierController extends Controller
         ]);
 
         $items = $validated['courriers'];
+        foreach ($request->input('courriers', []) as $index => $item) app(\App\Services\CourrierFormValidationService::class)->validate($item, null, "courriers.$index.");
 
         // Sécurité (C4) : normalisation des numéros du lot (mêmes règles que store()).
         foreach ($items as $idx => $item) {
@@ -431,9 +434,9 @@ class CourrierController extends Controller
                         'sens' => $item['sens'] ?? null,
                         'date_reception' => $item['dateReception'],
                         'date_enregistrement' => $dateEnregistrement,
-                        'expediteur' => $item['expediteur'],
-                        'destinataire' => $item['destinataire'],
-                        'objet' => $item['objet'],
+                        'expediteur' => $item['expediteur'] ?? '',
+                        'destinataire' => $item['destinataire'] ?? '',
+                        'objet' => $item['objet'] ?? '',
                         'priorite' => $item['priorite'] ?? 'NORMALE',
                         'statut' => 'ENREGISTRE',
                         'enregistre_par' => $enregistreParItem,
@@ -537,9 +540,9 @@ class CourrierController extends Controller
                 'sens' => 'nullable|string|in:ENTRANT,SORTANT',
                 'dateReception' => 'sometimes|date',
                 'dateEnregistrement' => 'sometimes|date',
-                'expediteur' => 'sometimes|string|max:255',
-                'destinataire' => 'sometimes|string|max:255',
-                'objet' => 'sometimes|string',
+                'expediteur' => 'sometimes|nullable|string|max:255',
+                'destinataire' => 'sometimes|nullable|string|max:255',
+                'objet' => 'sometimes|nullable|string',
                 'priorite' => 'sometimes|in:BASSE,NORMALE,HAUTE,URGENTE',
                 'statut' => 'sometimes|string|max:32',
                 'enregistrePar' => 'sometimes|string|max:255',
@@ -548,6 +551,9 @@ class CourrierController extends Controller
                 'fichier' => 'nullable|string',
                 'extraFields' => 'nullable|array',
             ]);
+
+            app(\App\Services\CourrierFormValidationService::class)->validate($request->all(), $courrier->toArray());
+            foreach (['expediteur', 'destinataire', 'objet'] as $field) if (array_key_exists($field, $validated) && $validated[$field] === null) $validated[$field] = '';
 
             // Sécurité (C4) : ne jamais laisser modifier le numéro vers un format non
             // officiel (ex. numéro généré côté client). Le numéro d'origine est conservé.
