@@ -40,7 +40,7 @@ check($orientation->targets($secDG,$outgoing)->pluck('id')->contains($dg->id),'D
 $orientation->orient($secDG,$outgoing,['assigneA'=>$dg->id]);
 $source=WorkflowEtape::where('courrier_id',$outgoing->id)->where('assigne_a',$dg->id)->firstOrFail();
 $closure=WorkflowEtape::where('courrier_id',$outgoing->id)->where('declencheur->phase','CLOTURE')->firstOrFail();
-check($orientation->targets($secDG,$outgoing->fresh())->pluck('id')->all()===[$dg->id],'DG incoming queue proposes the DG as its sole receiving responsible');
+check($orientation->targets($secDG,$outgoing->fresh())->isEmpty(),'DG secretary cannot orient the same step twice');
 check($orientation->targets($secretary,$outgoing->fresh())->isEmpty(),'receiving direction secretary never redirects its incoming letter back to DG while awaiting central validation');
 $a2=attachRouteInstruction($outgoing,$dg,$source,'Analyser et préparer la réponse dans la direction destinataire.');
 try{$router->route($dg,$outgoing,$a2,['type'=>'ENTITE','id'=>$other->id]);throw new RuntimeException('Wrong recipient accepted');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){check($e->getStatusCode()===422,'DG outgoing refuses an unrelated recipient direction');}
@@ -56,7 +56,7 @@ check(($agentStep->declencheur['finalRecipientId']??null)===$agent->id,'delegati
 check($closure->assigne_a===$secDG->id&&$closure->declencheur['phase']==='CLOTURE','delegation preserves DG closure and its responsible');
 check($closure->declencheur['etapePrecedenteId']===$agentStep->id,'DG closure waits for destination execution');
 $count=WorkflowEtape::where('courrier_id',$outgoing->id)->count();$notices=Notification::where('relatedId',$outgoing->id)->count();
-$orientation->orient($director,$outgoing->fresh(),['assigneA'=>$agent->id,'dgAnnotationId'=>$a2->id]);
+denied(fn()=>$orientation->orient($director,$outgoing->fresh(),['assigneA'=>$agent->id,'dgAnnotationId'=>$a2->id]),409);
 check(WorkflowEtape::where('courrier_id',$outgoing->id)->count()===$count&&Notification::where('relatedId',$outgoing->id)->count()===$notices,'repeated transmission does not duplicate steps or notices');
 $engine->transition($agentStep->id,$agent,['statut'=>'TERMINE','commentaire'=>'Analyse et réponse préparées.'],false);
 $engine->transition($closure->id,$secDG,['statut'=>'TERMINE','commentaire'=>'Courrier classé après traitement.'],false);
@@ -123,7 +123,7 @@ check($orientation->targets($admin,$noBypass)->pluck('id')->all()===[$dg->id],'a
 $orientation->orient($secDG,$noBypass,['assigneA'=>$dg->id]);
 check($orientation->targets($admin,$noBypass->fresh())->pluck('id')->all()===[$dg->id],'administrator sees only available circuit targets rather than queued tasks');
 denied(fn()=>$orientation->orient($admin,$noBypass->fresh(),['assigneA'=>$director->id]),403);
-check($orientation->options($secDG,$noBypass->fresh())['blockedReason']===null,'available DG target has no blocked reason');
+check(str_contains($orientation->options($secDG,$noBypass->fresh())['blockedReason'],'déjà été orienté'),'already forwarded step explains why it cannot be repeated');
 check(str_contains($orientation->options($secDG,$nested->fresh())['blockedReason'],'déjà traité'),'completed incoming workflow explains why no orientation is expected');
 check(str_contains($orientation->options($secretary,$noBureauCircuit->fresh())['blockedReason'],'déjà traité'),'completed local direction receipt cannot be reopened by orientation');
 $external=internalRouteLetter($unit,$dgUnit,$secDG,$unit);

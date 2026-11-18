@@ -17,6 +17,14 @@ class CourrierOrientationService
             && $this->execution->readiness($step, $steps)['ready']);
     }
 
+    private function alreadyForwarded(User $actor, Courrier $courrier, $steps = null): bool
+    {
+        $steps ??= WorkflowEtape::where('courrier_id', $courrier->id)->orderBy('ordre')->get();
+        // A later reception or instruction is a distinct, legitimate circuit step.
+        return !$this->activeStep($actor, $courrier, $steps)
+            && $steps->contains(fn($step) => ($step->declencheur['orientation']['actorId'] ?? null) === $actor->id);
+    }
+
     private function outgoingDirector(User $actor, Courrier $courrier): bool
     {
         if ($actor->role !== 'DIRECTEUR' || $courrier->type !== 'INTERNE') return false;
@@ -64,6 +72,7 @@ class CourrierOrientationService
         catch (\Illuminate\Validation\ValidationException) { return collect(); }
         if ($courrier->type === 'INTERNE' && (!app(CourrierPartyService::class)->entity($courrier, 'expediteur') || !app(CourrierPartyService::class)->entity($courrier, 'destinataire'))) return collect();
         if (!$this->access->canUpdateCourrier($actor, $courrier) || in_array($courrier->statut, ['TRAITE','ARCHIVE'], true)) return collect();
+        if ($this->alreadyForwarded($actor, $courrier)) return collect();
         $users = User::where('actif', true)->where('id', '!=', $actor->id)->get();
         if ($actor->isSuperAdmin()) {
             $steps=WorkflowEtape::where('courrier_id',$courrier->id)->orderBy('ordre')->get();
@@ -143,6 +152,7 @@ class CourrierOrientationService
     {
         if ($courrier->statut === 'TRAITE') return 'Ce courrier est déjà traité. Consultez son circuit pour voir les étapes réalisées.';
         if ($courrier->statut === 'ARCHIVE') return 'Ce courrier est archivé. Aucune nouvelle orientation n’est attendue.';
+        if ($this->alreadyForwarded($actor, $courrier)) return 'Ce courrier a déjà été orienté par votre compte. Le prochain responsable doit poursuivre le circuit.';
         $steps = WorkflowEtape::where('courrier_id', $courrier->id)->orderBy('ordre')->get();
         $ready = $steps->filter(fn($step) => in_array($step->statut, ['EN_ATTENTE','EN_COURS','REJETE'], true)
             && $this->execution->readiness($step, $steps)['ready']);
@@ -186,10 +196,7 @@ class CourrierOrientationService
             $courrier = Courrier::whereKey($courrier->id)->lockForUpdate()->firstOrFail();
             abort_unless($this->access->canUpdateCourrier($actor, $courrier) && !in_array($courrier->statut, ['TRAITE','ARCHIVE'], true),403);
             $steps = WorkflowEtape::where('courrier_id', $courrier->id)->lockForUpdate()->get();
-            $replay = $steps->first(fn($step) => ($step->declencheur['orientation']['actorId'] ?? null) === $actor->id
-                && ($step->declencheur['orientation']['targetId'] ?? null) === $data['assigneA']
-                && ($step->declencheur['orientation']['annotationId'] ?? null) === ($data['dgAnnotationId'] ?? null));
-            if (!$this->activeStep($actor, $courrier, $steps) && $replay && ($assignment = Assignation::where('courrier_id', $courrier->id)->where('assigne_a', $data['assigneA'])->first())) return $assignment;
+            abort_if($this->alreadyForwarded($actor, $courrier, $steps),409,'Ce courrier a déjà été orienté par votre compte. Le prochain responsable doit poursuivre le circuit.');
             $target = $this->targets($actor,$courrier)->firstWhere('id',$data['assigneA']);
             abort_unless($target,403,'Orientation non autorisée : choisissez le responsable correspondant au destinataire, en respectant les validations du circuit.');
             $annotation = empty($data['dgAnnotationId']) ? null : $this->instructions($courrier)->firstWhere('id',$data['dgAnnotationId']);

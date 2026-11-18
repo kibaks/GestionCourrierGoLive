@@ -50,7 +50,7 @@ denied(fn()=>$service->orient($secDG,$c,['assigneA'=>$director->id]),403);
 denied(fn()=>$service->orient($agent,$c,['assigneA'=>$outsider->id]),403);
 $service->orient($secDG,$c,['assigneA'=>$dg->id]);
 check(WorkflowEtape::where('courrier_id',$c->id)->count()===1,'orientation creates tracked task');
-$service->orient($secDG,$c->fresh(),['assigneA'=>$dg->id]);
+denied(fn()=>$service->orient($secDG,$c->fresh(),['assigneA'=>$dg->id]),409);
 check(WorkflowEtape::where('courrier_id',$c->id)->count()===1,'retry does not duplicate orientation');
 $step=WorkflowEtape::where('courrier_id',$c->id)->first();$step->update(['statut'=>'TERMINE']);
 $c->update(['statut'=>'EN_TRAITEMENT','sens'=>'SORTANT','destinataire'=>$unit->id]);
@@ -69,7 +69,7 @@ check(Notification::where('userId',$secretary->id)->where('metadata->orientation
 check(!Notification::where('userId',$otherSecretary->id)->exists(),'other direction secretary not notified');
 check(app(App\Services\CourrierAccessService::class)->canViewCourrier($secretary,$c->fresh()),'secretary keeps tracking access');
 check(WorkflowEtape::where('courrier_id',$c->id)->where('declencheur->phase','CLOTURE')->exists(),'validation and closure follow execution');
-$noticeQuery=fn()=>Notification::where('relatedId',$c->id);$count=$noticeQuery()->count();$service->orient($director,$c->fresh(),['assigneA'=>$agent->id,'dgAnnotationId'=>$annotation->id]);check($noticeQuery()->count()===$count,'retry sends no duplicate notifications');
+$noticeQuery=fn()=>Notification::where('relatedId',$c->id);$count=$noticeQuery()->count();denied(fn()=>$service->orient($director,$c->fresh(),['assigneA'=>$agent->id,'dgAnnotationId'=>$annotation->id]),409);check($noticeQuery()->count()===$count,'retry sends no duplicate notifications');
 $c->update(['statut'=>'ARCHIVE']);denied(fn()=>$service->orient($secretary,$c->fresh(),['assigneA'=>$director->id]),403);
 if ($existing && empty($retainOrientationFixtures)) DB::rollBack();
 echo "ORIENTATION TESTS PASSED\n";
