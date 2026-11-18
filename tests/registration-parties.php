@@ -8,8 +8,13 @@ foreach ([$secDG,$secretary] as $actor) foreach (['ENTRANT','SORTANT'] as $sense
     check($data['expediteur']===App\Models\EntiteOrganisationnelle::find($actor->entite_id)->nom&&$data['enregistrePar']===$actor->id,'assigned entity supplies sender for '.$actor->role.' '.$sense);
     $expected=App\Models\EntiteOrganisationnelle::find($actor->entite_id);
     check(in_array($expected->id,json_decode($data['extraFields']['entiteEmetteurJson'],true),true),'sender entity is resolved from account, not input');
-    check($data['destinataire']==='Destinataire choisi'&&$data['extraFields']['contenu']==='Texte conservé','recipient and configured information remain editable');
+    check($data['destinataire']===($actor->id===$secretary->id?$dgUnit->nom:'Destinataire choisi')&&$data['extraFields']['contenu']==='Texte conservé','direction recipient is fixed to DG while DG keeps its destination choice');
 }
+$locked=$registration->input($secretary,['type'=>'INTERNE','sens'=>'SORTANT','destinataire'=>$other->nom,'extraFields'=>['entiteDestinataireJson'=>json_encode(['direction'=>$other->id])]]);
+check($locked['destinataire']===$dgUnit->nom,'direction cannot submit another internal recipient');
+check(json_decode($locked['extraFields']['entiteDestinataireJson'],true)===['direction_generale'=>$dgUnit->id],'stale recipient hierarchy is replaced by the DG alone');
+$dgChoice=$registration->input($secDG,['type'=>'INTERNE','sens'=>'SORTANT','destinataire'=>$unit->nom]);
+check($dgChoice['destinataire']===$unit->nom,'DG secretariat retains its internal destination selector');
 denied(fn()=>$registration->input($secretary,['type'=>'EXTERNE','sens'=>'ENTRANT','destinataire'=>'Direction Générale']),403);
 denied(fn()=>$registration->input($secretary,['type'=>'EXTERNE','sens'=>'SORTANT','destinataire'=>'Institution externe']),403);
 denied(fn()=>$registration->prepare($secretary,new App\Models\Courrier(['type'=>'EXTERNE'])),403);

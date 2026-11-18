@@ -37,6 +37,15 @@ class CourrierRegistrationService
         }
         if (($input['type'] ?? null) === 'INTERNE') {
             $path = app(CourrierPartyService::class)->path($root);
+            if (collect($path)->contains('type','direction')) {
+                $central = collect($path)->first(fn($entity) => $entity->type === 'direction_generale');
+                abort_unless($central,422,'Renseignez la Direction Générale de rattachement avant l’enregistrement.');
+                $input['destinataire'] = $central->nom;
+                $recipientCascade=[];
+                foreach(app(CourrierPartyService::class)->path($central) as $entity) $recipientCascade[$entity->type]=$entity->id;
+                $extra['entiteDestinataireJson']=json_encode($recipientCascade,JSON_UNESCAPED_UNICODE);
+                $extra['entiteDestinataireChemin']=$central->nom;
+            }
             $cascade = [];
             foreach ($path as $entity) $cascade[$entity->type] = $entity->id;
             $extra['entiteEmetteurJson'] = json_encode($cascade, JSON_UNESCAPED_UNICODE);
