@@ -189,6 +189,8 @@ class CourrierController extends Controller
             }
         }
 
+        $request->merge(app(\App\Services\CourrierRegistrationService::class)->input($user, $request->all()));
+
         $validated = $request->validate([
             'numero' => 'nullable|string|max:64',
             'type' => 'required|in:INTERNE,EXTERNE',
@@ -196,7 +198,7 @@ class CourrierController extends Controller
             'dateReception' => 'required|date',
             'dateEnregistrement' => 'nullable|date',
             'expediteur' => 'nullable|string|max:255',
-            'destinataire' => 'nullable|string|max:255',
+            'destinataire' => 'required|string|max:255',
             'objet' => 'nullable|string',
             'priorite' => 'nullable|in:BASSE,NORMALE,HAUTE,URGENTE',
             'statut' => 'nullable|in:ENREGISTRE',
@@ -362,6 +364,8 @@ class CourrierController extends Controller
         $this->authorize('creer-courrier');
         $user = Auth::user();
 
+        if (is_array($request->input('courriers'))) $request->merge(['courriers'=>array_map(fn($item)=>is_array($item)?app(\App\Services\CourrierRegistrationService::class)->input($user,$item):$item,$request->input('courriers'))]);
+
         $validated = $request->validate([
             'courriers' => 'required|array',
                 'courriers.*.numero' => 'nullable|string|max:64',
@@ -370,7 +374,7 @@ class CourrierController extends Controller
             'courriers.*.dateReception' => 'required|date',
             'courriers.*.dateEnregistrement' => 'nullable|date',
             'courriers.*.expediteur' => 'nullable|string|max:255',
-            'courriers.*.destinataire' => 'nullable|string|max:255',
+            'courriers.*.destinataire' => 'required|string|max:255',
             'courriers.*.objet' => 'nullable|string',
             'courriers.*.priorite' => 'nullable|in:BASSE,NORMALE,HAUTE,URGENTE',
             'courriers.*.statut' => 'nullable|in:ENREGISTRE',

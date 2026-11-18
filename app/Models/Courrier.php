@@ -17,7 +17,10 @@ class Courrier extends Model
 
     protected static function booted(): void
     {
-        static::saving(fn (self $courrier) => app(\App\Services\CourrierPartyService::class)->assertDistinct($courrier));
+        static::saving(function (self $courrier) {
+            if ($actor = \Illuminate\Support\Facades\Auth::user()) app(\App\Services\CourrierRegistrationService::class)->prepare($actor, $courrier);
+            app(\App\Services\CourrierPartyService::class)->assertDistinct($courrier);
+        });
         static::creating(function(self $courrier){if($actor=\Illuminate\Support\Facades\Auth::user())app(\App\Services\CourrierAccessService::class)->prepareSecretaryCourrier($actor,$courrier);});
         static::creating(fn (self $courrier) => app(\App\Services\CourrierNumberingService::class)->assign($courrier));
         static::created(function(self $courrier){
