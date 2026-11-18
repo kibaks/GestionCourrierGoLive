@@ -17,7 +17,7 @@ class CourrierOrientationService
             && $this->execution->readiness($step, $steps)['ready']);
     }
 
-    private function alreadyForwarded(User $actor, Courrier $courrier, $steps = null): bool
+    public function alreadyForwarded(User $actor, Courrier $courrier, $steps = null): bool
     {
         $steps ??= WorkflowEtape::where('courrier_id', $courrier->id)->orderBy('ordre')->get();
         // A later reception or instruction is a distinct, legitimate circuit step.

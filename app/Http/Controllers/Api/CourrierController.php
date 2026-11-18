@@ -151,6 +151,15 @@ class CourrierController extends Controller
         $reads = DB::table('courrier_reads')->where('user_id', $user->id)
             ->whereIn('courrier_id', array_column($data, 'id'))->pluck('read_at', 'courrier_id');
         $data = array_map(fn ($row) => array_merge($row, ['isRead' => isset($reads[$row['id']]), 'readAt' => $reads[$row['id']] ?? null]), $data);
+        // Resolve the current actor's transmission state outside the cached list.
+        $orientation = app(\App\Services\CourrierOrientationService::class);
+        $stepsByCourrier = \App\Models\WorkflowEtape::whereIn('courrier_id', array_column($data, 'id'))
+            ->orderBy('ordre')->get()->groupBy('courrier_id');
+        $data = array_map(function ($row) use ($user, $orientation, $stepsByCourrier) {
+            $courrier = new Courrier(['id' => $row['id']]);
+            $row['orientationAlreadyForwarded'] = $orientation->alreadyForwarded($user, $courrier, $stepsByCourrier->get($row['id'], collect()));
+            return $row;
+        }, $data);
         return response()->json(['data' => $data]);
     }
 
