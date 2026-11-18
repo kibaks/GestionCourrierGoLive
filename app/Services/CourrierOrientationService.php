@@ -47,6 +47,9 @@ class CourrierOrientationService
         if ($actor->role!=='DIRECTEUR' || $this->outgoingDirector($actor,$courrier)) return false;
         $steps=WorkflowEtape::where('courrier_id',$courrier->id)->orderBy('ordre')->get();
         $source=$this->activeStep($actor,$courrier,$steps);
+        $receiptEntity=$source?->declencheur['receivingEntityId']??null;
+        if ($courrier->type==='INTERNE' && $receiptEntity && $this->access->secretaryRoot($actor)?->id===$receiptEntity
+            && app(CourrierPartyService::class)->entity($courrier,'expediteur')?->type==='direction_generale') return false;
         $next=$source ? $steps->first(fn($step)=>($step->declencheur['etapePrecedenteId']??null)===$source->id && $step->statut==='EN_ATTENTE') : null;
         // Continuing a fixed hierarchy task already validated by the DG is not a new delegation.
         if ($next && in_array($next->declencheur['phase']??null,['INSTRUCTION','EXECUTION'],true)
@@ -80,6 +83,9 @@ class CourrierOrientationService
         if ($actor->isSecretaire()) {
             $root = $this->access->secretaryRoot($actor);
             if (!$root || !$root->responsable_id) return collect();
+            $responsibleRole=$root->type==='direction_generale'?'DIRECTEUR_GENERAL':'DIRECTEUR';
+            $responsible=$users->first(fn($person)=>$person->id===$root->responsable_id && $person->role===$responsibleRole);
+            if (!$responsible) return collect();
             $parties = app(CourrierPartyService::class);
             $recipient = $parties->entity($courrier, 'destinataire');
             if (!$recipient) return collect();
@@ -99,14 +105,10 @@ class CourrierOrientationService
             if (!$next && $steps->isNotEmpty()) $next = $steps->first(fn($step) => $step->assigne_a !== $actor->id && $step->statut === 'EN_ATTENTE' && $this->execution->readiness($step, $steps)['ready']);
             if ($next) {
                 $person = $users->firstWhere('id', $next->assigne_a);
-                return $person && in_array($person->entite_id, $pathIds, true) ? collect([$person]) : collect();
+                return $person && $person->id===$responsible->id ? collect([$responsible]) : collect();
             }
             if ($steps->contains(fn($step) => $step->statut !== 'TERMINE')) return collect();
-            if ($courrier->type === 'INTERNE' && $root->type === 'direction_generale') {
-                $dg = collect($path)->first(fn($entity) => $entity->type === 'direction_generale');
-                return $users->where('id', $dg?->responsable_id);
-            }
-            return $users->where('id', $recipient->responsable_id);
+            return collect([$responsible]);
         }
         if ($actor->role !== 'DIRECTEUR') return collect();
         $steps = WorkflowEtape::where('courrier_id', $courrier->id)->orderBy('ordre')->get();

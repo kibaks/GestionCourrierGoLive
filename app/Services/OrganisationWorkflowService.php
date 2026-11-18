@@ -68,11 +68,28 @@ class OrganisationWorkflowService
             }
             if(in_array($courrier->statut,['TRAITE','ARCHIVE'],true))$this->fail('Le courrier est déjà clôturé ou archivé.');
             $plan=$procedure?ProcedureSettings::preview($procedure,$actor,$courrier->priorite):$this->plan($actor,$courrier,$entityId,$agentId,$automatic);
-            if($courrier->type==='INTERNE')$plan=array_values(array_filter($plan,fn($item)=>in_array($item['phase'],['ORIENTATION','CLOTURE'],true)));
             $origin=$this->access->secretaryRoot($actor);
             $parties=app(CourrierPartyService::class);
             $sender=$parties->entity($courrier,'expediteur');
+            $recipient=$parties->entity($courrier,'destinataire');
             $senderPath=array_map(fn($entity)=>$entity->id,$parties->path($sender));
+            $recipientPath=array_map(fn($entity)=>$entity->id,$parties->path($recipient));
+            $receivingDirection=$courrier->type==='INTERNE' && $actor->isSecretaire()
+                && $origin?->type==='direction' && $sender?->type==='direction_generale'
+                && in_array($origin->id,$recipientPath,true);
+            if ($receivingDirection) {
+                // A letter registered on arrival in a direction goes to that direction's director.
+                // Existing central circuits are kept by the earlier existing-workflow guard.
+                $director=User::whereKey($origin->responsable_id)->where('role','DIRECTEUR')->where('actif',true)->first();
+                if (!$director) $this->fail('Rattachez un directeur actif à la direction qui reçoit le courrier.');
+                $processing=array_values(array_filter($plan,fn($item)=>in_array($item['phase'],['INSTRUCTION','EXECUTION'],true)));
+                if (!collect($processing)->contains('assigneA',$director->id)) array_unshift($processing,['etape'=>'Examen du courrier entrant — '.$origin->nom,'assigneA'=>$director->id,'phase'=>'INSTRUCTION']);
+                $closure=collect($plan)->firstWhere('phase','CLOTURE')??[];
+                $closure=array_merge($closure,['etape'=>'Clôture et classement — '.$origin->nom,'assigneA'=>$actor->id,'phase'=>'CLOTURE']);
+                $plan=array_merge([['etape'=>'Réception du courrier entrant — '.$origin->nom,'assigneA'=>$actor->id,'phase'=>'RECEPTION_SECRETARIAT']],$processing,[$closure]);
+            } elseif($courrier->type==='INTERNE') {
+                $plan=array_values(array_filter($plan,fn($item)=>in_array($item['phase'],['ORIENTATION','CLOTURE'],true)));
+            }
             if($courrier->type==='INTERNE' && $origin?->type==='direction' && in_array($origin->id,$senderPath,true) && ($actor->isSecretaire() || $actor->role==='DIRECTEUR')) {
                 $director=User::whereKey($origin->responsable_id)->where('actif',true)->first();
                 $dgStep=collect($plan)->firstWhere('phase','ORIENTATION');
@@ -87,7 +104,7 @@ class OrganisationWorkflowService
             }
             $previous=null;$circuit=(string)Str::uuid();
             foreach($plan as$index=>$item) {
-                $step=WorkflowEtape::create(['courrier_id'=>$courrier->id,'etape'=>$item['etape'],'assigne_a'=>$item['assigneA'],'statut'=>'EN_ATTENTE','cree_par'=>$actor->id,'ordre'=>$index+1,'est_condition'=>false,'duree_estimee'=>$item['dureeEstimee']??null,'declencheur'=>['type'=>$previous?'APRES_ETAPE':'IMMEDIAT','etapePrecedenteId'=>$previous,'circuit'=>'ARMP','circuitId'=>$circuit,'phase'=>$item['phase'],'procedureId'=>$procedure['id']??null,'procedureName'=>$procedure['nom']??null,'procedureVersion'=>$procedure['_version']??null,'hoursByUrgency'=>$item['hoursByUrgency']??null,'circulation'=>$procedure['circulation']??['notifyNext'=>true,'deadlineOnReopen'=>'CONSERVER'],'targetEntityId'=>$entityId,'planKey'=>$key]]);
+                $step=WorkflowEtape::create(['courrier_id'=>$courrier->id,'etape'=>$item['etape'],'assigne_a'=>$item['assigneA'],'statut'=>'EN_ATTENTE','cree_par'=>$actor->id,'ordre'=>$index+1,'est_condition'=>false,'duree_estimee'=>$item['dureeEstimee']??null,'declencheur'=>['type'=>$previous?'APRES_ETAPE':'IMMEDIAT','etapePrecedenteId'=>$previous,'circuit'=>'ARMP','circuitId'=>$circuit,'phase'=>$item['phase'],'procedureId'=>$procedure['id']??null,'procedureName'=>$procedure['nom']??null,'procedureVersion'=>$procedure['_version']??null,'hoursByUrgency'=>$item['hoursByUrgency']??null,'circulation'=>$procedure['circulation']??['notifyNext'=>true,'deadlineOnReopen'=>'CONSERVER'],'targetEntityId'=>$entityId,'receivingEntityId'=>$receivingDirection?$origin->id:null,'planKey'=>$key]]);
                 $this->execution->ensureAssignment($courrier,$step,$actor);$previous=$step->id;
             }
             $steps=WorkflowEtape::where('courrier_id',$courrier->id)->get();$this->execution->synchronize($courrier,$steps);$this->execution->notifyReady($courrier,$steps);
