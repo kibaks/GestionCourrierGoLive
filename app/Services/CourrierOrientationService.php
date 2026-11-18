@@ -65,6 +65,47 @@ class CourrierOrientationService
         return true;
     }
 
+    /** Recover only untouched legacy circuits that omitted the emitting direction. */
+    private function legacySenderRoot(Courrier $courrier, $steps): ?\App\Models\EntiteOrganisationnelle
+    {
+        if ($courrier->type !== 'INTERNE' || !in_array($courrier->statut, ['ENREGISTRE','EN_ATTENTE_DG'], true) || $steps->isEmpty()) return null;
+        if ($steps->contains(fn($step) => $step->statut !== 'EN_ATTENTE' || $step->date_debut || $step->date_fin
+            || !empty($step->responses) || !empty($step->commentaire) || !empty($step->declencheur['orientation'])
+            || in_array($step->declencheur['phase'] ?? null, ['SECRETARIAT_EMETTEUR','TRANSMISSION_DIRECTION'], true))) return null;
+        $roots = $steps->filter(fn($step) => empty($step->declencheur['etapePrecedenteId']));
+        if ($roots->count() !== 1 || Annotation::where('courrier_id', $courrier->id)->exists()) return null;
+        if (Assignation::where('courrier_id', $courrier->id)->where(fn($query) => $query->whereNull('instructions')->orWhere('instructions','not like','[WORKFLOW]%'))->exists()) return null;
+        $parties = app(CourrierPartyService::class);
+        $recipient = $parties->entity($courrier, 'destinataire');
+        $sender = collect($parties->path($parties->entity($courrier, 'expediteur')))->first(fn($entity) => $entity->type === 'direction');
+        if (!$sender || $recipient?->type !== 'direction_generale') return null;
+        $first = User::find($roots->first()->assigne_a);
+        return $first && in_array($first->role, ['SECRETAIRE','DIRECTEUR_GENERAL'], true)
+            && $this->access->secretaryRoot($first)?->id === $recipient->id ? $sender : null;
+    }
+
+    private function prependSenderPresentation(User $actor, Courrier $courrier, $steps, \App\Models\EntiteOrganisationnelle $root): void
+    {
+        $director = User::whereKey($root->responsable_id)->where('role','DIRECTEUR')->where('actif',true)->first();
+        abort_unless($director && $director->entite_id === $root->id, 422, 'Renseignez le Directeur actif de la direction émettrice.');
+        $first = $steps->first(fn($step) => empty($step->declencheur['etapePrecedenteId']));
+        foreach ($steps as $step) $step->update(['ordre'=>$step->ordre + 2]);
+        $template = $first->declencheur ?? [];
+        unset($template['availableAt'], $template['orientation'], $template['hoursByUrgency']);
+        $previous = null;
+        foreach ([[$actor,'SECRETARIAT_EMETTEUR','Présentation du courrier par le secrétariat émetteur'],[$director,'TRANSMISSION_DIRECTION','Examen et transmission à la Direction générale']] as $index=>[$person,$phase,$label]) {
+            $trigger = array_merge($template, ['type'=>$previous?'APRES_ETAPE':'IMMEDIAT','etapePrecedenteId'=>$previous,'phase'=>$phase,'circuit'=>'ARMP','targetEntityId'=>$root->id,'legacySenderPresentation'=>true]);
+            $step = WorkflowEtape::create(['courrier_id'=>$courrier->id,'etape'=>$label,'assigne_a'=>$person->id,'cree_par'=>$actor->id,'statut'=>'EN_ATTENTE','ordre'=>$index+1,'est_condition'=>false,'declencheur'=>$trigger]);
+            $this->execution->ensureAssignment($courrier, $step, $actor);
+            $previous = $step->id;
+        }
+        $trigger = $first->declencheur;
+        unset($trigger['availableAt']);
+        $trigger['type'] = 'APRES_ETAPE'; $trigger['etapePrecedenteId'] = $previous;
+        $first->update(['declencheur'=>$trigger]);
+        $this->execution->validateGraph(WorkflowEtape::where('courrier_id',$courrier->id)->get());
+    }
+
     public function targets(User $actor, Courrier $courrier)
     {
         if (!Gate::forUser($actor)->allows('assigner-courrier')) return collect();
@@ -73,6 +114,9 @@ class CourrierOrientationService
         if ($courrier->type === 'INTERNE' && (!app(CourrierPartyService::class)->entity($courrier, 'expediteur') || !app(CourrierPartyService::class)->entity($courrier, 'destinataire'))) return collect();
         if (!$this->access->canUpdateCourrier($actor, $courrier) || in_array($courrier->statut, ['TRAITE','ARCHIVE'], true)) return collect();
         if ($this->alreadyForwarded($actor, $courrier)) return collect();
+        $pending = WorkflowEtape::where('courrier_id',$courrier->id)->orderBy('ordre')->get();
+        $legacySender = $this->legacySenderRoot($courrier, $pending);
+        if ($legacySender && (!$actor->isSecretaire() || $this->access->secretaryRoot($actor)?->id !== $legacySender->id)) return collect();
         $users = User::where('actif', true)->where('id', '!=', $actor->id)->get();
         if ($actor->isSuperAdmin()) {
             $steps=WorkflowEtape::where('courrier_id',$courrier->id)->orderBy('ordre')->get();
@@ -107,7 +151,7 @@ class CourrierOrientationService
             $sender = $parties->entity($courrier, 'expediteur');
             $senderPath = array_map(fn($entity) => $entity->id, $parties->path($sender));
             if ($root->type === 'direction' && in_array($root->id, $senderPath, true) && !in_array($root->id, $pathIds, true)) {
-                if ($courrier->type === 'INTERNE' && !$source && $steps->contains(fn($step) => $step->statut !== 'TERMINE')) return collect();
+                if ($courrier->type === 'INTERNE' && !$source && !$legacySender && !$this->receptionState($actor,$courrier,$steps)['orientationPendingReception'] && $steps->contains(fn($step) => $step->statut !== 'TERMINE')) return collect();
                 return $users->where('id', $root->responsable_id);
             }
             $next = $source ? $steps->first(fn($step) => ($step->declencheur['etapePrecedenteId'] ?? null) === $source->id && $step->statut === 'EN_ATTENTE') : null;
@@ -154,6 +198,7 @@ class CourrierOrientationService
         if ($courrier->statut === 'ARCHIVE') return 'Ce courrier est archivé. Aucune nouvelle orientation n’est attendue.';
         if ($this->alreadyForwarded($actor, $courrier)) return 'Ce courrier a déjà été orienté par votre compte. Le prochain responsable doit poursuivre le circuit.';
         $steps = WorkflowEtape::where('courrier_id', $courrier->id)->orderBy('ordre')->get();
+        if ($sender = $this->legacySenderRoot($courrier, $steps)) return 'Ce courrier attend d’abord sa présentation au Directeur de '.$sender->nom.', puis sa transmission à la Direction générale.';
         $ready = $steps->filter(fn($step) => in_array($step->statut, ['EN_ATTENTE','EN_COURS','REJETE'], true)
             && $this->execution->readiness($step, $steps)['ready']);
         $rejected = $ready->firstWhere('statut', 'REJETE');
@@ -185,8 +230,11 @@ class CourrierOrientationService
         $empty = ['orientationPendingReception'=>false, 'orientationAwaitingPreviousStep'=>false];
         if (!$actor->isSecretaire() || in_array($courrier->statut, ['TRAITE','ARCHIVE'], true)) return $empty;
         $root = $this->access->secretaryRoot($actor);
-        if ($root?->type !== 'direction') return $empty;
         $steps ??= WorkflowEtape::where('courrier_id', $courrier->id)->orderBy('ordre')->get();
+        if ($sender = $this->legacySenderRoot($courrier, $steps)) {
+            return ['orientationPendingReception'=>$root?->id === $sender->id, 'orientationAwaitingPreviousStep'=>$root?->id !== $sender->id];
+        }
+        if ($root?->type !== 'direction') return $empty;
         $source = $this->activeStep($actor, $courrier, $steps);
         if (!$source) {
             if ($this->alreadyForwarded($actor, $courrier, $steps)) return $empty;
@@ -235,6 +283,9 @@ class CourrierOrientationService
                 else abort_unless($this->activeStep($actor,$courrier,$steps),409,'Poursuivez le circuit uniquement depuis votre étape active.');
             }
             abort_if($this->alreadyForwarded($actor, $courrier, $steps),409,'Ce courrier a déjà été orienté par votre compte. Le prochain responsable doit poursuivre le circuit.');
+            if (($sender = $this->legacySenderRoot($courrier, $steps)) && $actor->isSecretaire() && $this->access->secretaryRoot($actor)?->id === $sender->id) {
+                $this->prependSenderPresentation($actor, $courrier, $steps, $sender);
+            }
             $target = $this->targets($actor,$courrier)->firstWhere('id',$data['assigneA']);
             abort_unless($target,403,'Orientation non autorisée : choisissez le responsable correspondant au destinataire, en respectant les validations du circuit.');
             $annotation = empty($data['dgAnnotationId']) ? null : $this->instructions($courrier)->firstWhere('id',$data['dgAnnotationId']);

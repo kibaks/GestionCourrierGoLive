@@ -156,7 +156,7 @@ class CourrierController extends Controller
         $stepsByCourrier = \App\Models\WorkflowEtape::whereIn('courrier_id', array_column($data, 'id'))
             ->orderBy('ordre')->get()->groupBy('courrier_id');
         $data = array_map(function ($row) use ($user, $orientation, $stepsByCourrier) {
-            $courrier = new Courrier(['id' => $row['id'], 'statut' => $row['statut']]);
+            $courrier = new Courrier(['id'=>$row['id'], 'statut'=>$row['statut'], 'type'=>$row['type'], 'sens'=>$row['sens'], 'expediteur'=>$row['expediteur'], 'destinataire'=>$row['destinataire'], 'extra_fields'=>$row['extraFields'] ?? []]);
             $row['orientationAlreadyForwarded'] = $orientation->alreadyForwarded($user, $courrier, $stepsByCourrier->get($row['id'], collect()));
             $row = array_merge($row, $orientation->receptionState($user, $courrier, $stepsByCourrier->get($row['id'], collect())));
             return $row;
