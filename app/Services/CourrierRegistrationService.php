@@ -8,14 +8,15 @@ class CourrierRegistrationService
 {
     public function input(User $actor, array $input): array
     {
-        $input['expediteur'] = $actor->name;
+        $root = \App\Models\EntiteOrganisationnelle::where('actif', true)->find($actor->entite_id)
+            ?? app(CourrierAccessService::class)->secretaryRoot($actor);
+        abort_unless($root, 422, 'Rattachez le compte connecté à une entité avant l’enregistrement.');
+        $input['expediteur'] = $root->nom;
         $input['enregistrePar'] = $actor->id;
         $extra = $input['extraFields'] ?? [];
         if (is_string($extra)) $extra = json_decode($extra, true) ?: [];
         if (!is_array($extra)) $extra = [];
         if (($input['type'] ?? null) === 'INTERNE') {
-            $root = app(CourrierAccessService::class)->secretaryRoot($actor);
-            abort_unless($root, 422, 'Rattachez le compte connecté à une entité interne avant l’enregistrement.');
             $path = app(CourrierPartyService::class)->path($root);
             $cascade = [];
             foreach ($path as $entity) $cascade[$entity->type] = $entity->id;
@@ -30,7 +31,7 @@ class CourrierRegistrationService
         foreach ($sections as $section) foreach ($section['columns'] ?? [] as $column) foreach ($column['fields'] ?? [] as $field) {
             $name = $field['name'] ?? '';
             $label = \Illuminate\Support\Str::ascii(mb_strtolower($name.' '.($field['label'] ?? '')));
-            if ($name && preg_match('/expediteur|emetteur|sender/', $label)) $extra[$name] = $actor->name;
+            if ($name && preg_match('/expediteur|emetteur|sender/', $label)) $extra[$name] = $root->nom;
             elseif ($name && preg_match('/destinataire|recipient|recepteur/', $label)) $extra[$name] = $input['destinataire'] ?? '';
         }
         $input['extraFields'] = $extra;
