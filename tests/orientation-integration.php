@@ -40,10 +40,12 @@ $other=EntiteOrganisationnelle::create(['nom'=>'Direction financière','type'=>'
 $dg=person('DIRECTEUR_GENERAL',$dgUnit,'dg');$director=person('DIRECTEUR',$unit,'director');$otherDirector=person('DIRECTEUR',$other,'otherdirector');
 $dgUnit->update(['responsable_id'=>$dg->id]);$unit->update(['responsable_id'=>$director->id]);$other->update(['responsable_id'=>$otherDirector->id]);
 $secDG=person('SECRETAIRE',$dgUnit,'secdg');$secretary=person('SECRETAIRE',$unit,'secretary');$otherSecretary=person('SECRETAIRE',$other,'othersecretary');$agent=person('AGENT',$unit,'agent');$outsider=person('AGENT',$other,'outsider');
-$c=Courrier::withoutEvents(fn()=>Courrier::create(['type'=>'EXTERNE','sens'=>'ENTRANT','date_reception'=>now(),'date_enregistrement'=>now(),'objet'=>'Orientation integration test','expediteur'=>'Test','destinataire'=>'Test','numero'=>uniqid('TEST-'),'direction'=>$unit->nom,'statut'=>'ENREGISTRE','enregistre_par'=>$secDG->id,'priorite'=>'NORMALE']));
+$c=Courrier::withoutEvents(fn()=>Courrier::create(['type'=>'EXTERNE','sens'=>'ENTRANT','date_reception'=>now(),'date_enregistrement'=>now(),'objet'=>'Orientation integration test','expediteur'=>'Test','destinataire'=>$dgUnit->id,'numero'=>uniqid('TEST-'),'direction'=>$unit->nom,'statut'=>'ENREGISTRE','enregistre_par'=>$secDG->id,'priorite'=>'NORMALE']));
 $service=app(CourrierOrientationService::class);
 check($service->targets($secDG,$c)->pluck('id')->all()===[$dg->id],'DG secretary targets only DG');
+$c->sens='SORTANT';$c->destinataire=$unit->id;
 check($service->targets($secretary,$c)->pluck('id')->all()===[$director->id],'direction secretary targets only its director');
+$c->sens='ENTRANT';$c->destinataire=$dgUnit->id;
 denied(fn()=>$service->orient($secDG,$c,['assigneA'=>$director->id]),403);
 denied(fn()=>$service->orient($agent,$c,['assigneA'=>$outsider->id]),403);
 $service->orient($secDG,$c,['assigneA'=>$dg->id]);
@@ -51,7 +53,7 @@ check(WorkflowEtape::where('courrier_id',$c->id)->count()===1,'orientation creat
 $service->orient($secDG,$c->fresh(),['assigneA'=>$dg->id]);
 check(WorkflowEtape::where('courrier_id',$c->id)->count()===1,'retry does not duplicate orientation');
 $step=WorkflowEtape::where('courrier_id',$c->id)->first();$step->update(['statut'=>'TERMINE']);
-$c->update(['statut'=>'EN_TRAITEMENT']);
+$c->update(['statut'=>'EN_TRAITEMENT','sens'=>'SORTANT','destinataire'=>$unit->id]);
 $service->orient($secretary,$c->fresh(),['assigneA'=>$director->id]);
 denied(fn()=>$service->orient($director,$c->fresh(),['assigneA'=>$agent->id]),422);
 $annotation=Annotation::create(['courrier_id'=>$c->id,'created_by'=>$dg->id,'contenu'=>'Analyser la conformité du dossier.','type'=>'NOTE','kind'=>'TEXTE','fichier_id'=>'document-test','page'=>1,'statut'=>'OUVERT']);

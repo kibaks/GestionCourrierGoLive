@@ -28,6 +28,16 @@ class DgAnnotationRoutingService
             else {$seen[$root->id]=true; $root=$all->get($root->parent_id);}
         }
         if (!$root || $root->responsable_id !== $actor->id) abort(403,'Destinataire hors de votre organigramme.');
+        if ($courrier->type === 'INTERNE') {
+            $parties=app(CourrierPartyService::class);
+            $sender=$parties->entity($courrier,'expediteur');
+            $recipient=$parties->entity($courrier,'destinataire');
+            if ($sender?->type==='direction_generale' && $recipient && $recipient->type!=='direction_generale') {
+                $recipientPath=array_map(fn($item)=>$item->id,$parties->path($recipient));
+                $targetPath=array_map(fn($item)=>$item->id,$parties->path($entity));
+                abort_unless($entity->type!=='direction_generale' && (in_array($entity->id,$recipientPath,true) || in_array($recipient->id,$targetPath,true)),422,'La transmission doit suivre l’entité destinataire du courrier.');
+            }
+        }
         $chain=[$person];
         $direction=app(CourrierAccessService::class)->secretaryRoot($person);
         if ($courrier->type==='INTERNE' && $direction && $direction->type==='direction') {
@@ -43,6 +53,36 @@ class DgAnnotationRoutingService
         $evidence=['actorId'=>$actor->id,'targetId'=>$person->id,'annotationId'=>$annotation->id,'annotationText'=>$annotation->contenu,'fichierId'=>$annotation->fichier_id,'page'=>$annotation->page,'createdAt'=>now()->toIso8601String()];
         if ($existing) {
             $trigger=$existing->declencheur; $trigger['orientation']=$evidence; $existing->update(['declencheur'=>$trigger]);
+            return;
+        }
+        // Reuse the pending hierarchy all the way to the selected recipient.
+        // A bureau may already have director, division and bureau tasks in this circuit.
+        $plannedPath=collect();$cursor=$source;$seen=[];
+        $plannedEntityIds=array_map(fn($item)=>$item->id,app(CourrierPartyService::class)->path($entity));
+        while ($cursor && !isset($seen[$cursor->id])) {
+            $seen[$cursor->id]=true;
+            $children=$steps->filter(fn($step)=>($step->declencheur['etapePrecedenteId']??null)===$cursor->id);
+            if ($children->count()!==1) break;
+            $next=$children->first();$responsible=User::find($next->assigne_a);
+            if ($next->statut!=='EN_ATTENTE' || $next->date_debut
+                || !in_array($next->declencheur['phase']??null,['INSTRUCTION','EXECUTION','RECEPTION_SECRETARIAT'],true)
+                || !$responsible || !in_array($responsible->entite_id,$plannedEntityIds,true)) break;
+            $plannedPath->push($next);
+            if ($next->assigne_a===$person->id) break;
+            $cursor=$next;
+        }
+        if ($plannedPath->isNotEmpty() && $plannedPath->last()->assigne_a===$person->id) {
+            $engine=app(WorkflowExecutionService::class);$previous=$source;
+            if ($courrier->type==='INTERNE' && $direction?->type==='direction' && $plannedPath->first()->assigne_a!==$chain[0]->id) {
+                foreach ($steps->where('ordre','>',$source->ordre) as $later) $later->update(['ordre'=>$later->ordre+1]);
+                $reception=WorkflowEtape::create(['courrier_id'=>$courrier->id,'etape'=>'Réception et orientation du secrétariat — '.$direction->nom,'assigne_a'=>$chain[0]->id,'statut'=>'EN_ATTENTE','cree_par'=>$actor->id,'ordre'=>$source->ordre+1,'est_condition'=>false,'declencheur'=>['type'=>'APRES_ETAPE','etapePrecedenteId'=>$source->id,'circuit'=>'ARMP','phase'=>'RECEPTION_SECRETARIAT','dgSourceStepId'=>$source->id,'finalRecipientId'=>$person->id,'targetEntityId'=>$direction->id,'orientation'=>$evidence]]);
+                $engine->ensureAssignment($courrier,$reception,$actor);$previous=$reception;
+            }
+            foreach ($plannedPath as $planned) {
+                $link=$planned->declencheur;$link['etapePrecedenteId']=$previous->id;$link['dgSourceStepId']=$source->id;$link['finalRecipientId']=$person->id;$link['orientation']=$evidence;
+                $planned->update(['declencheur'=>$link]);$engine->ensureAssignment($courrier,$planned,$actor);$previous=$planned;
+            }
+            $fresh=WorkflowEtape::where('courrier_id',$courrier->id)->get();$engine->validateGraph($fresh);$engine->synchronize($courrier,$fresh);$engine->notifyReady($courrier,$fresh);
             return;
         }
         // Insert after the DG's previous destinations and before the existing visa/closure.

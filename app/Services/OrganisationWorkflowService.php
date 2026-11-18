@@ -57,9 +57,9 @@ class OrganisationWorkflowService
         return $plan;
     }
 
-    public function create(User$actor,Courrier$courrier,string$entityId,?string$agentId,?array$procedure=null): void
+    public function create(User$actor,Courrier$courrier,string$entityId,?string$agentId,?array$procedure=null,bool$automatic=false): void
     {
-        DB::transaction(function()use($actor,$courrier,$entityId,$agentId,$procedure){
+        DB::transaction(function()use($actor,$courrier,$entityId,$agentId,$procedure,$automatic){
             $courrier=Courrier::whereKey($courrier->id)->lockForUpdate()->firstOrFail();
             $key=hash('sha256',json_encode([$entityId,$agentId]));$existing=WorkflowEtape::where('courrier_id',$courrier->id)->lockForUpdate()->get();
             if($existing->isNotEmpty()) {
@@ -67,17 +67,20 @@ class OrganisationWorkflowService
                 abort(409,'Un workflow existe déjà : il est conservé. Utilisez ses étapes existantes.');
             }
             if(in_array($courrier->statut,['TRAITE','ARCHIVE'],true))$this->fail('Le courrier est déjà clôturé ou archivé.');
-            $plan=$procedure?ProcedureSettings::preview($procedure,$actor,$courrier->priorite):$this->plan($actor,$courrier,$entityId,$agentId);
+            $plan=$procedure?ProcedureSettings::preview($procedure,$actor,$courrier->priorite):$this->plan($actor,$courrier,$entityId,$agentId,$automatic);
             if($courrier->type==='INTERNE')$plan=array_values(array_filter($plan,fn($item)=>in_array($item['phase'],['ORIENTATION','CLOTURE'],true)));
-            $origin=$actor->isSecretaire()?$this->access->secretaryRoot($actor):null;
-            if($courrier->type==='INTERNE' && $origin?->type==='direction') {
+            $origin=$this->access->secretaryRoot($actor);
+            $parties=app(CourrierPartyService::class);
+            $sender=$parties->entity($courrier,'expediteur');
+            $senderPath=array_map(fn($entity)=>$entity->id,$parties->path($sender));
+            if($courrier->type==='INTERNE' && $origin?->type==='direction' && in_array($origin->id,$senderPath,true) && ($actor->isSecretaire() || $actor->role==='DIRECTEUR')) {
                 $director=User::whereKey($origin->responsable_id)->where('actif',true)->first();
                 $dgStep=collect($plan)->firstWhere('phase','ORIENTATION');
                 $dgUnit=EntiteOrganisationnelle::where('type','direction_generale')->where('responsable_id',$dgStep['assigneA']??null)->where('actif',true)->first();
                 $dgSecretary=$dgUnit?User::where('role','SECRETAIRE')->where('entite_id',$dgUnit->id)->where('actif',true)->first():null;
                 if(!$director||!$dgSecretary)$this->fail('Le circuit interne requiert le directeur émetteur et le secrétariat DG actifs.');
-                $plan=array_merge([
-                    ['etape'=>'Orientation du secrétariat émetteur','assigneA'=>$actor->id,'phase'=>'SECRETARIAT_EMETTEUR'],
+                $prefix=$actor->isSecretaire() ? [['etape'=>'Orientation du secrétariat émetteur','assigneA'=>$actor->id,'phase'=>'SECRETARIAT_EMETTEUR']] : [];
+                $plan=array_merge($prefix,[
                     ['etape'=>'Traitement et transmission à la Direction générale','assigneA'=>$director->id,'phase'=>'TRANSMISSION_DIRECTION'],
                     ['etape'=>'Réception et orientation du secrétariat DG','assigneA'=>$dgSecretary->id,'phase'=>'RECEPTION_SECRETARIAT']
                 ],$plan);

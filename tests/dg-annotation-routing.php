@@ -7,7 +7,7 @@ Gate::define('modifier-courrier',fn($user)=>true);
 if (!$existing) Illuminate\Support\Facades\Schema::create('courrier_reads',function($t){$t->string('courrier_id');$t->string('user_id');$t->timestamp('read_at');$t->unique(['courrier_id','user_id']);});
 $policy=app(App\Services\AnnotationActionPolicy::class);
 foreach ([$secretary,$director,$agent] as $person) check($policy->reason($person,$c)!==null,'non-DG cannot annotate: '.$person->role);
-$c2=App\Models\Courrier::withoutEvents(fn()=>App\Models\Courrier::create(['type'=>'INTERNE','sens'=>'ENTRANT','date_reception'=>now(),'date_enregistrement'=>now(),'objet'=>'DG routing test','expediteur'=>'Test','destinataire'=>'Test','numero'=>uniqid('DG-'),'statut'=>'ASSIGNE','enregistre_par'=>$secDG->id,'priorite'=>'NORMALE']));
+$c2=App\Models\Courrier::withoutEvents(fn()=>App\Models\Courrier::create(['type'=>'INTERNE','sens'=>'ENTRANT','date_reception'=>now(),'date_enregistrement'=>now(),'objet'=>'DG routing test','expediteur'=>$dgUnit->id,'destinataire'=>$unit->id,'numero'=>uniqid('DG-'),'statut'=>'ASSIGNE','enregistre_par'=>$secDG->id,'priorite'=>'NORMALE']));
 $plan=app(App\Services\OrganisationWorkflowService::class)->plan($dg,$c2,$unit->id,null,true);
 check(!collect($plan)->contains('phase','SECRETARIAT'),'initial secretary check removed');
 check(collect($plan)->first()['phase']==='ORIENTATION','DG is the first step');
@@ -41,7 +41,7 @@ $ack=App\Models\Notification::where('relatedId',$c2->id)->where('userId',$dg->id
 check($ack===1,'DG receives final recipient opening receipt');
 $receipt->record($c2,$director);
 check(App\Models\Notification::where('relatedId',$c2->id)->where('userId',$dg->id)->where('metadata->openingReceipt->readerId',$director->id)->count()===1,'reopening sends no duplicate receipt');
-$reverse=App\Models\Courrier::withoutEvents(fn()=>App\Models\Courrier::create(['type'=>'INTERNE','sens'=>'SORTANT','date_reception'=>now(),'date_enregistrement'=>now(),'objet'=>'Reverse internal simulation','expediteur'=>'Direction','destinataire'=>'DG','numero'=>uniqid('REVERSE-'),'statut'=>'ENREGISTRE','enregistre_par'=>$secretary->id,'direction'=>$unit->nom,'priorite'=>'NORMALE']));
+$reverse=App\Models\Courrier::withoutEvents(fn()=>App\Models\Courrier::create(['type'=>'INTERNE','sens'=>'SORTANT','date_reception'=>now(),'date_enregistrement'=>now(),'objet'=>'Reverse internal simulation','expediteur'=>$unit->id,'destinataire'=>$dgUnit->id,'numero'=>uniqid('REVERSE-'),'statut'=>'ENREGISTRE','enregistre_par'=>$secretary->id,'direction'=>$unit->nom,'priorite'=>'NORMALE']));
 $procedure=['id'=>'test','nom'=>'Interne','targetEntityId'=>$dgUnit->id,'phases'=>[['code'=>'ORIENTATION','label'=>'DG','hours'=>1],['code'=>'CLOTURE','label'=>'Classement','hours'=>1]]];
 app(App\Services\OrganisationWorkflowService::class)->create($secretary,$reverse,$dgUnit->id,null,$procedure);
 $reverseSteps=App\Models\WorkflowEtape::where('courrier_id',$reverse->id)->orderBy('ordre')->get();

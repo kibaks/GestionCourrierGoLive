@@ -30,6 +30,9 @@ class ProcedureSettings {
   return $result;
  }
  public static function resolveEntity(Courrier$c,string$fallback):string{
+  $recipient=app(CourrierPartyService::class)->entity($c,'destinataire');
+  if($recipient)return $recipient->id;
+  if($c->type==='INTERNE')throw \Illuminate\Validation\ValidationException::withMessages(['destinataire'=>'Sélectionnez une entité destinataire identifiable dans l’organigramme avant de créer le circuit interne.']);
   $entities=EntiteOrganisationnelle::where('actif',true)->get();
   $raw=$c->extra_fields['entiteDestinataireJson']??null;
   try{$cascade=is_string($raw)?json_decode($raw,true,512,JSON_THROW_ON_ERROR):$raw;}catch(\Throwable){$cascade=null;}

@@ -533,6 +533,8 @@ class CourrierController extends Controller
                 if ($request->exists($field) && $request->input($field) !== $value) throw \Illuminate\Validation\ValidationException::withMessages([$field => 'Référence immuable après attribution.']);
             }
             $request->offsetUnset('enregistrePar');
+            // The internal mailbox sense is computed per entity; editing its view must not flip the stored origin.
+            if ($courrier->type === 'INTERNE') $request->offsetUnset('sens');
 
             $validated = $request->validate([
                 'numero' => 'sometimes|string|max:64',

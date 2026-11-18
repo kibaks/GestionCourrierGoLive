@@ -17,6 +17,7 @@ class Courrier extends Model
 
     protected static function booted(): void
     {
+        static::saving(fn (self $courrier) => app(\App\Services\CourrierPartyService::class)->assertDistinct($courrier));
         static::creating(function(self $courrier){if($actor=\Illuminate\Support\Facades\Auth::user())app(\App\Services\CourrierAccessService::class)->prepareSecretaryCourrier($actor,$courrier);});
         static::creating(fn (self $courrier) => app(\App\Services\CourrierNumberingService::class)->assign($courrier));
         static::created(function(self $courrier){
@@ -99,7 +100,8 @@ class Courrier extends Model
             'numerotationSnapshot' => $arr['numerotation_snapshot'] ?? null,
             'clientRequestId' => $arr['client_request_id'] ?? null,
             'type' => $arr['type'],
-            'sens' => $arr['sens'] ?? null,
+            'sens' => app(\App\Services\CourrierPartyService::class)->sense($this, \Illuminate\Support\Facades\Auth::user()),
+            'sensEnregistrement' => $arr['sens'] ?? null,
             'dateReception' => $this->date_reception?->format('c'),
             'dateEnregistrement' => $this->date_enregistrement?->format('c'),
             'expediteur' => $arr['expediteur'],
