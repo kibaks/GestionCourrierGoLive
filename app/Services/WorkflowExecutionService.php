@@ -113,16 +113,43 @@ class WorkflowExecutionService
         }
     }
 
+    public function courrierStatus(Courrier $courrier, $steps): string
+    {
+        if ($courrier->statut === 'ARCHIVE') return 'ARCHIVE';
+        $relevant = $steps->filter(fn($step)=>!$this->readiness($step,$steps)['skipped']);
+        if ($relevant->isEmpty()) return $courrier->statut;
+        $done = $relevant->every(fn($step)=>$step->statut==='TERMINE');
+        if ($steps->contains(fn($step)=>($step->declencheur['circuit']??null)==='HIERARCHIQUE')
+            && !$steps->contains(fn($step)=>($step->declencheur['phase']??null)==='CLOTURE')) $done=false;
+        if ($done) return 'TRAITE';
+        $forwarded = [];
+        foreach ($steps as $destination) {
+            $evidence = $destination->declencheur['orientation'] ?? [];
+            if (!empty($evidence['sourceStepId'])) $forwarded[$evidence['sourceStepId']] = (bool)($evidence['processingBeforeForward'] ?? false);
+        }
+        $started = $relevant->contains(function($step) use ($forwarded) {
+            if (in_array($step->statut,['EN_COURS','REJETE'],true)) return true;
+            if ($step->statut !== 'TERMINE') return false;
+            if (array_key_exists($step->id,$forwarded)) return $forwarded[$step->id]
+                || collect($step->responses??[])->contains(fn($response)=>str_contains($response['message']??'', '→ EN_COURS') || str_starts_with($response['message']??'', 'Retour de traitement :'));
+            return !in_array($step->declencheur['phase']??null,['SECRETARIAT','RECEPTION','TRANSMISSION_DIRECTION'],true);
+        });
+        if ($started) return 'EN_TRAITEMENT';
+        $oriented = $steps->contains(fn($step)=>!empty($step->declencheur['orientation']['actorId']) || $step->statut==='TERMINE');
+        // Older explicit assignments have no orientation snapshot. Auto-planned tasks use this marker.
+        if (!$oriented && $courrier->id) $oriented = Assignation::where('courrier_id',$courrier->id)
+            ->where(fn($query)=>$query->whereNull('instructions')->orWhere('instructions','!=','[WORKFLOW] Circuit du courrier'))->exists();
+        return $oriented ? 'ASSIGNE' : 'ENREGISTRE';
+    }
+
     public function synchronize(Courrier $courrier, $steps): void
     {
         if($courrier->statut==='ARCHIVE')return;
         $relevant=$steps->filter(fn($step)=>!$this->readiness($step,$steps)['skipped']);
         if($relevant->isEmpty())return;
         $this->refreshTiming($courrier,$steps);
-        $done=$relevant->every(fn($step)=>$step->statut==='TERMINE');
-        if($steps->contains(fn($step)=>($step->declencheur['circuit']??null)==='HIERARCHIQUE') && !$steps->contains(fn($step)=>($step->declencheur['phase']??null)==='CLOTURE'))$done=false;
-        $started=$relevant->contains(fn($step)=>in_array($step->statut,['EN_COURS','TERMINE','REJETE'],true));
-        $courrier->statut=$done?'TRAITE':($started?'EN_TRAITEMENT':'ASSIGNE');$courrier->save();\Illuminate\Support\Facades\Cache::forever('courriers_cache_version',(string)Str::uuid());
+        $courrier->statut=$this->courrierStatus($courrier,$steps);$done=$courrier->statut==='TRAITE';
+        $courrier->save();\Illuminate\Support\Facades\Cache::forever('courriers_cache_version',(string)Str::uuid());
         if($done) Assignation::where('courrier_id',$courrier->id)->update(['statut'=>'TERMINE']);
         // A person with several steps remains assigned until every applicable step is done.
         foreach($steps->pluck('assigne_a')->filter()->unique()as$userId) {
@@ -231,7 +258,7 @@ class WorkflowExecutionService
             if($status==='ARCHIVE'&&!in_array($actor->role,['SUPER_ADMIN','DIRECTEUR_GENERAL','SECRETAIRE'],true))abort(403,'Archivage réservé au secrétariat et à la direction.');
         } else {
             $relevant=$steps->filter(fn($s)=>!$this->readiness($s,$steps)['skipped']);
-            $expected=$relevant->contains(fn($s)=>in_array($s->statut,['EN_COURS','TERMINE','REJETE'],true))?'EN_TRAITEMENT':'ASSIGNE';
+            $expected=$this->courrierStatus($courrier,$steps);
             if($status!==$expected)$this->fail('Le statut est piloté par les étapes du workflow.');
         }
     }

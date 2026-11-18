@@ -232,7 +232,7 @@ class CourrierOrientationService
             if ($actor->role === 'DIRECTEUR' && !$source && $steps->isNotEmpty()) abort(409,'Votre étape doit être disponible avant de transmettre le courrier.');
             if (!$source && $destination) abort_unless($this->execution->readiness($destination,$steps)['ready'],409,'Le responsable précédent doit terminer son étape avant cette transmission.');
             $instruction = trim($data['instructions']??'');
-            $evidence = ['sourceStepId'=>$source?->id,'actorId'=>$actor->id,'targetId'=>$target->id,'annotationId'=>$annotation?->id,'annotationText'=>$annotation?->contenu,'validationStepId'=>$this->validatedDgAncestor($source,$steps)?->id,'fichierId'=>$annotation?->fichier_id,'page'=>$annotation?->page,'instructions'=>$instruction,'createdAt'=>now()->toIso8601String()];
+            $evidence = ['sourceStepId'=>$source?->id,'processingBeforeForward'=>$source?->statut==='EN_COURS','actorId'=>$actor->id,'targetId'=>$target->id,'annotationId'=>$annotation?->id,'annotationText'=>$annotation?->contenu,'validationStepId'=>$this->validatedDgAncestor($source,$steps)?->id,'fichierId'=>$annotation?->fichier_id,'page'=>$annotation?->page,'instructions'=>$instruction,'createdAt'=>now()->toIso8601String()];
             if ($source) {
                 $history=$source->responses??[];
                 $history[]=['id'=>(string)Str::uuid(),'auteurId'=>$actor->id,'auteurNom'=>$actor->name,'message'=>'Transmission à '.$target->name.($annotation?' selon l’annotation du DG : '.$annotation->contenu:''),'createdAt'=>now()->toIso8601String()];
