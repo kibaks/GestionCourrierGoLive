@@ -31,15 +31,40 @@ class CourrierAccessService
         $root=$this->secretaryRoot($user);if(!$root)return $query->whereRaw('1=0');
         if($root->type==='direction_generale')return $query;
         $entities=\App\Models\EntiteOrganisationnelle::where('actif',true)->get();$ids=[$root->id];
-        do{$count=count($ids);foreach($entities as$e)if(in_array($e->parent_id,$ids,true)&&!in_array($e->id,$ids,true))$ids[]=$e->id;}while($count!==count($ids));
+        do{$count=count($ids);foreach($entities as$entity)if(in_array($entity->parent_id,$ids,true)&&!in_array($entity->id,$ids,true))$ids[]=$entity->id;}while($count!==count($ids));
         $names=$entities->whereIn('id',$ids)->pluck('nom')->merge($ids)->all();
-        return $query->where(function(Builder$q)use($names,$ids,$user){
-            $q->whereHas('workflowEtapes',fn($assigned)=>$assigned->where('assigne_a',$user->id))->orWhereIn('direction',$names)->orWhere(function(Builder$blank)use($names,$ids,$user){
-                $blank->where(fn($missing)=>$missing->whereNull('direction')->orWhere('direction',''));
-                $blank->where(function($scoped)use($names,$ids,$user){
-                    $scoped->whereIn('service',$names)->orWhereHas('workflowEtapes',fn($steps)=>$steps->whereIn('declencheur->targetEntityId',$ids));
-                    $scoped->orWhere(fn($own)=>$own->where('enregistre_par',$user->id)->where(fn($empty)=>$empty->whereNull('service')->orWhere('service','')));
-                });
+        $central=collect(app(CourrierPartyService::class)->path($root))->first(fn($entity)=>$entity->type==='direction_generale');
+        $dgIds=$central?User::where('role','DIRECTEUR_GENERAL')->where('entite_id',$central->id)->pluck('id')->all():[];
+        $dgNames=$central?[$central->id,$central->nom]:[];
+        $secretaries=User::where('role','SECRETAIRE')->get()->filter(fn($person)=>$this->secretaryRoot($person)?->id===$root->id)->pluck('id')->all();
+        $agentIds=User::where('role','AGENT')->whereIn('entite_id',$ids)->pluck('id')->all();
+        $instructors=User::where('role','DIRECTEUR')->get()->filter(fn($person)=>$this->secretaryRoot($person)?->id===$root->id)->pluck('id')->merge($dgIds)->all();
+        return $query->where(function(Builder $scope)use($names,$root,$secretaries,$dgIds,$dgNames,$user,$agentIds,$instructors){
+            // Outgoing correspondence belongs to the entity that emitted it to the DG.
+            $scope->where(function(Builder $outgoing)use($names,$root,$dgNames){
+                $outgoing->where('type','INTERNE')->whereIn('destinataire',$dgNames)
+                    ->where(fn(Builder $sender)=>$sender->whereIn('expediteur',$names)
+                        ->orWhere('extra_fields->entiteEmetteurJson','like','%"'.$root->id.'"%'));
+            });
+            // A DG instruction explicitly naming this secretariat grants reception access.
+            $scope->orWhereHas('workflowEtapes',fn(Builder $steps)=>$steps->whereIn('assigne_a',$secretaries)
+                ->whereIn('declencheur->orientation->actorId',$dgIds));
+            $scope->orWhereHas('assignations',fn(Builder $assignments)=>$assignments->whereIn('assigne_a',$secretaries)
+                ->whereIn('assigne_par',$dgIds)->where(fn(Builder $actual)=>$actual->whereNull('instructions')->orWhere('instructions','not like','[WORKFLOW]%')));
+            // The secretariat follows actual instructions addressed to its agents.
+            $scope->orWhereHas('workflowEtapes',fn(Builder $steps)=>$steps->whereIn('assigne_a',$agentIds)
+                ->whereIn('declencheur->orientation->targetId',$agentIds)->whereIn('declencheur->orientation->actorId',$instructors));
+            $scope->orWhereHas('assignations',fn(Builder $assignments)=>$assignments->whereIn('assigne_a',$agentIds)
+                ->whereIn('assigne_par',$instructors)->whereNotNull('instructions')->where('instructions','!=','')->where('instructions','not like','[WORKFLOW]%'));
+            // A directly addressed DG letter is received after central validation,
+            // or when registered locally from the already received DG document.
+            $scope->orWhere(function(Builder $incoming)use($names,$root,$dgNames,$dgIds,$secretaries){
+                $incoming->whereIn('expediteur',$dgNames)
+                    ->where(fn(Builder $recipient)=>$recipient->whereIn('destinataire',$names)
+                        ->orWhere('extra_fields->entiteDestinataireJson','like','%"'.$root->id.'"%'))
+                    ->where(fn(Builder $received)=>$received->whereIn('enregistre_par',$secretaries)
+                        ->orWhereHas('workflowEtapes',fn(Builder $validated)=>$validated->whereIn('assigne_a',$dgIds)
+                            ->where('statut','TERMINE')->where('declencheur->phase','ORIENTATION')));
             });
         });
     }
@@ -58,6 +83,39 @@ class CourrierAccessService
             ->union(WorkflowEtape::where('assigne_a',$user->id)->select('courrier_id'));
     }
 
+    /** Prepared workflow assignments do not constitute a secretary's actual handoff. */
+    private function receivedByLeaderQuery(User $user): Builder
+    {
+        $root = $this->secretaryRoot($user);
+        $secretaries = $root ? User::where('role', 'SECRETAIRE')->get()
+            ->filter(fn($secretary) => $this->secretaryRoot($secretary)?->id === $root->id)->pluck('id')->all() : [];
+        return $this->routedByQuery($user, $secretaries);
+    }
+
+    private function instructedAgentQuery(User $user): Builder
+    {
+        $root = $this->secretaryRoot($user);
+        $actors = $root ? User::whereIn('role', ['DIRECTEUR','DIRECTEUR_GENERAL'])->get()->filter(function ($person) use ($root) {
+            if ($person->isDirecteur()) return $this->secretaryRoot($person)?->id === $root->id;
+            return collect(app(CourrierPartyService::class)->path($root))->contains('responsable_id', $person->id);
+        })->pluck('id')->all() : [];
+        return $this->routedByQuery($user, $actors, true);
+    }
+
+    private function routedByQuery(User $user, array $secretaries, bool $requireInstruction = false): Builder
+    {
+        return Courrier::query()->where(function (Builder $query) use ($user, $secretaries, $requireInstruction) {
+            $query->whereHas('workflowEtapes', fn(Builder $steps) => $steps
+                ->where('assigne_a', $user->id)
+                ->where('declencheur->orientation->targetId', $user->id)
+                ->whereIn('declencheur->orientation->actorId', $secretaries))
+                ->orWhereHas('assignations', fn(Builder $assignments) => $assignments
+                    ->where('assigne_a', $user->id)->whereIn('assigne_par', $secretaries)
+                    ->where(fn(Builder $explicit) => $explicit->whereNull('instructions')->orWhere('instructions', 'not like', '[WORKFLOW]%'))
+                    ->when($requireInstruction, fn(Builder $explicit) => $explicit->whereNotNull('instructions')->where('instructions', '!=', '')));
+        });
+    }
+
     public function getAccessibleCourriersQuery(User $user): Builder
     {
         $query = Courrier::query()->orderBy('date_enregistrement', 'desc');
@@ -69,18 +127,14 @@ class CourrierAccessService
 
         if($user->isSecretaire())return $this->secretaryQuery($query,$user);
 
-        // DG : courriers orientés (assignés) + courriers qu'il a enregistrés
-        if ($user->isDirecteurGeneral()) {
-            $assigneAIds = $this->assignedCourriers($user);
-            $query->where(function (Builder $q) use ($user, $assigneAIds) {
-                $q->whereIn('id', $assigneAIds)
-                  ->orWhere('enregistre_par', $user->id);
-            });
-            return $query;
+        if ($user->isDirecteurGeneral() || $user->isDirecteur()) {
+            return $this->receivedByLeaderQuery($user)->orderBy('date_enregistrement', 'desc');
         }
 
+        if ($user->isAgent()) return $this->instructedAgentQuery($user)->orderBy('date_enregistrement', 'desc');
+
         // DIRECTEUR / CHEF_DIVISION : courriers orientés (assignés) + courriers enregistrés + courriers de leur direction
-        if ($user->isDirecteur() || $user->isChefDivision()) {
+        if ($user->isChefDivision()) {
             $assigneAIds = $this->assignedCourriers($user);
             $query->where(function (Builder $q) use ($user, $assigneAIds) {
                 $q->whereIn('id', $assigneAIds)
@@ -116,6 +170,12 @@ class CourrierAccessService
             return true;
         }
 
+        if ($user->isDirecteurGeneral() || $user->isDirecteur()) {
+            return $this->receivedByLeaderQuery($user)->whereKey($courrier->id)->exists();
+        }
+
+        if ($user->isAgent()) return $this->instructedAgentQuery($user)->whereKey($courrier->id)->exists();
+
         // L'expéditeur (celui qui a enregistré) voit toujours son courrier
         if ($courrier->enregistre_par === (string) $user->id) {
             return true;
@@ -132,7 +192,7 @@ class CourrierAccessService
         }
 
         // DIRECTEUR / CHEF_DIVISION : courriers de leur direction
-        if ($user->isDirecteur() || $user->isChefDivision()) {
+        if ($user->isChefDivision()) {
             return $user->direction && $courrier->direction === $user->direction;
         }
 
@@ -151,8 +211,9 @@ class CourrierAccessService
             return true;
         }
         if ($user->isAgent()) {
-            return (string)$courrier->enregistre_par===(string)$user->id && $courrier->statut==='ENREGISTRE' || \App\Models\Assignation::where('courrier_id',$courrier->id)->where('assigne_a',$user->id)->whereIn('statut',['EN_ATTENTE','EN_COURS'])->exists();
+            return $this->canViewCourrier($user, $courrier) && \App\Models\Assignation::where('courrier_id',$courrier->id)->where('assigne_a',$user->id)->whereIn('statut',['EN_ATTENTE','EN_COURS'])->exists();
         }
+        if ($user->isDirecteurGeneral() || $user->isDirecteur()) return $this->canViewCourrier($user, $courrier);
         if ((string) $courrier->enregistre_par === (string) $user->id) {
             return true;
         }
@@ -168,6 +229,6 @@ class CourrierAccessService
     public function canDeleteCourrier(User $user, Courrier $courrier): bool
     {
         if($user->isSecretaire())return $this->canViewCourrier($user,$courrier);
-        return $user->isSuperAdmin() || $user->isDirecteurGeneral() || $courrier->enregistre_par === $user->id;
+        return $user->isSuperAdmin() || (($user->isDirecteurGeneral() || $courrier->enregistre_par === $user->id) && $this->canViewCourrier($user, $courrier));
     }
 }

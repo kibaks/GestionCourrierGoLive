@@ -97,7 +97,7 @@ class CourrierController extends Controller
         ])));
         $isAdmin = $user->role === 'SUPER_ADMIN';
         $cacheKey = ($isAdmin ? 'courriers_all' : "courriers_{$user->id}") . ":{$filterHash}";
-        $cacheKey .= ':' . Cache::get('courriers_cache_version', '0') . ':' . md5(json_encode([$user->role, $user->direction, $user->service, $user->entite_id]));
+        $cacheKey .= ':secretary-handoff-v1:' . Cache::get('courriers_cache_version', '0') . ':' . md5(json_encode([$user->role, $user->direction, $user->service, $user->entite_id]));
 
         $data = Cache::remember($cacheKey, 30, function () use ($user, $request, $filterDirection, $filterService, $filterSousService, $filterBureau) {
             // SUPER_ADMIN voit toujours tous les courriers (évite liste vide si rôle mal résolu)
@@ -156,8 +156,9 @@ class CourrierController extends Controller
         $stepsByCourrier = \App\Models\WorkflowEtape::whereIn('courrier_id', array_column($data, 'id'))
             ->orderBy('ordre')->get()->groupBy('courrier_id');
         $data = array_map(function ($row) use ($user, $orientation, $stepsByCourrier) {
-            $courrier = new Courrier(['id' => $row['id']]);
+            $courrier = new Courrier(['id' => $row['id'], 'statut' => $row['statut']]);
             $row['orientationAlreadyForwarded'] = $orientation->alreadyForwarded($user, $courrier, $stepsByCourrier->get($row['id'], collect()));
+            $row = array_merge($row, $orientation->receptionState($user, $courrier, $stepsByCourrier->get($row['id'], collect())));
             return $row;
         }, $data);
         return response()->json(['data' => $data]);
@@ -168,7 +169,7 @@ class CourrierController extends Controller
         $this->authorize('voir-courriers');
         $user = Auth::user();
         $courrier = Courrier::findOrFail($id);
-        $hasNotification = !$user->isSecretaire() && \App\Models\Notification::where('userId', $user->id)->where('relatedId', $id)->exists();
+        $hasNotification = !$user->isSecretaire() && !$user->isDirecteurGeneral() && !$user->isDirecteur() && !$user->isAgent() && \App\Models\Notification::where('userId', $user->id)->where('relatedId', $id)->exists();
         abort_unless($hasNotification || $this->accessService->canViewCourrier($user, $courrier), 403);
         return response()->json(['data'=>app(\App\Services\CourrierOpeningReceiptService::class)->record($courrier,$user)]);
     }
@@ -516,7 +517,7 @@ class CourrierController extends Controller
         $courrier = Courrier::findOrFail($id);
 
         // Accès autorisé si l'utilisateur a une notification liée à ce courrier
-        $hasNotification = !$user->isSecretaire() && \App\Models\Notification::where('userId', $user->id)
+        $hasNotification = !$user->isSecretaire() && !$user->isDirecteurGeneral() && !$user->isDirecteur() && !$user->isAgent() && \App\Models\Notification::where('userId', $user->id)
             ->where('relatedId', $id)
             ->exists();
 

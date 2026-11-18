@@ -42,13 +42,20 @@ $source=WorkflowEtape::where('courrier_id',$outgoing->id)->where('assigne_a',$dg
 $closure=WorkflowEtape::where('courrier_id',$outgoing->id)->where('declencheur->phase','CLOTURE')->firstOrFail();
 check($orientation->targets($secDG,$outgoing->fresh())->isEmpty(),'DG secretary cannot orient the same step twice');
 check($orientation->targets($secretary,$outgoing->fresh())->isEmpty(),'receiving direction secretary never redirects its incoming letter back to DG while awaiting central validation');
+check($orientation->receptionState($secretary,$outgoing->fresh())['orientationAwaitingPreviousStep'],'direction list waits for central handoff before offering orientation');
+check(!app(App\Services\CourrierAccessService::class)->canViewCourrier($secretary,$outgoing->fresh()),'direction secretariat cannot see central draft before a DG handoff');
 $a2=attachRouteInstruction($outgoing,$dg,$source,'Analyser et préparer la réponse dans la direction destinataire.');
 try{$router->route($dg,$outgoing,$a2,['type'=>'ENTITE','id'=>$other->id]);throw new RuntimeException('Wrong recipient accepted');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){check($e->getStatusCode()===422,'DG outgoing refuses an unrelated recipient direction');}
 $router->route($dg,$outgoing,$a2,['type'=>'ENTITE','id'=>$unit->id]);
 $engine->transition($source->id,$dg,['statut'=>'TERMINE','commentaire'=>'Instruction validée et transmise.'],false);
 check($orientation->targets($secretary,$outgoing->fresh())->pluck('id')->all()===[$director->id],'incoming direction queue proposes only its own director');
 check($orientation->targets($secDG,$outgoing->fresh())->isEmpty(),'DG secretary does not orient a letter in another direction reception queue');
-$orientation->orient($secretary,$outgoing->fresh(),['assigneA'=>$director->id,'initialOrientation'=>false]);
+check($orientation->receptionState($secretary,$outgoing->fresh())['orientationPendingReception'],'DG handoff makes the new direction reception pending');
+check($orientation->options($secretary,$outgoing->fresh())['initialOrientation'],'reception can be oriented despite an already oriented global status');
+check(!$orientation->receptionState($otherSecretary,$outgoing->fresh())['orientationPendingReception'],'another direction cannot claim the reception');
+$orientation->orient($secretary,$outgoing->fresh(),['assigneA'=>$director->id,'initialOrientation'=>true]);
+check(!$orientation->receptionState($secretary,$outgoing->fresh())['orientationPendingReception'],'direction presentation is no longer pending after handoff');
+denied(fn()=>$orientation->orient($secretary,$outgoing->fresh(),['assigneA'=>$director->id,'initialOrientation'=>true]),409);
 $orientation->orient($director,$outgoing->fresh(),['assigneA'=>$agent->id,'dgAnnotationId'=>$a2->id]);
 $agentStep=WorkflowEtape::where('courrier_id',$outgoing->id)->where('assigne_a',$agent->id)->firstOrFail();
 $closure=$closure->fresh();
@@ -68,6 +75,7 @@ foreach ([[$dg,'ORIENTATION'],[$director,'INSTRUCTION'],[$chief,'INSTRUCTION'],[
     $step=WorkflowEtape::create(['courrier_id'=>$legacy->id,'etape'=>$phase,'assigne_a'=>$responsible->id,'cree_par'=>$secDG->id,'statut'=>'EN_ATTENTE','ordre'=>$index+1,'est_condition'=>false,'declencheur'=>['type'=>$previous?'APRES_ETAPE':'IMMEDIAT','etapePrecedenteId'=>$previous,'phase'=>$phase,'circuit'=>'ARMP']]);
     $engine->ensureAssignment($legacy,$step,$secDG);$legacySteps[]=$step;$previous=$step->id;
 }
+$orientation->orient($secDG,$legacy->fresh(),['assigneA'=>$dg->id,'initialOrientation'=>true]);
 $legacyAnnotation=attachRouteInstruction($legacy,$dg,$legacySteps[0],'Poursuivre le circuit hiérarchique prévu.');
 $router->route($dg,$legacy,$legacyAnnotation,['type'=>'ENTITE','id'=>$unit->id]);
 check(WorkflowEtape::where('courrier_id',$legacy->id)->where('assigne_a',$director->id)->count()===1,'DG instruction reuses the planned director task without duplication');
@@ -101,6 +109,7 @@ $engine->transition($localBureau->id,$bureauHead,['statut'=>'TERMINE','commentai
 $localClosure=$localFlow->first(fn($step)=>($step->declencheur['phase']??null)==='CLOTURE');
 $engine->transition($localClosure->id,$secretary,['statut'=>'TERMINE','commentaire'=>'Classé dans la direction destinataire.'],false);
 check($noBureauCircuit->fresh()->statut==='TRAITE','direction receiving route completes director processing and local closure');
+$orientation->orient($secDG,$nested->fresh(),['assigneA'=>$dg->id,'initialOrientation'=>true]);
 $nestedAnnotation=attachRouteInstruction($nested,$dg,$nestedSteps[0],'Transmettre au bureau destinataire par la hiérarchie prévue.');
 $router->route($dg,$nested,$nestedAnnotation,['type'=>'ENTITE','id'=>$bureau->id]);
 foreach ([$director,$divisionHead,$bureauHead] as $responsible) check(WorkflowEtape::where('courrier_id',$nested->id)->where('assigne_a',$responsible->id)->count()===1,'bureau routing preserves a single task for '.$responsible->role);

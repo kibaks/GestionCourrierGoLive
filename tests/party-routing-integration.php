@@ -15,7 +15,7 @@ check($service->targets($secDG,$c)->isEmpty(),'unknown recipient blocks orientat
 $c->destinataire=$unit->id;
 $unrouted=\App\Models\Courrier::withoutEvents(fn()=>\App\Models\Courrier::create(['type'=>'INTERNE','sens'=>'SORTANT','statut'=>'ENREGISTRE','expediteur'=>$dgUnit->id,'destinataire'=>$unit->id,'enregistre_par'=>$secDG->id,'direction'=>$unit->nom,'priorite'=>'NORMALE','date_reception'=>now(),'date_enregistrement'=>now(),'objet'=>'Circuit selon destinataire','numero'=>uniqid('PARTY-')]));
 check($service->targets($secDG,$unrouted)->pluck('id')->all()===[$dg->id],'DG secretary obtains DG validation before destination dispatch');
-$unrouted->expediteur=$unit->id;$unrouted->destinataire=$dgUnit->id;
+$unrouted->expediteur=$unit->id;$unrouted->destinataire=$dgUnit->id;$unrouted->save();
 check($service->targets($secretary,$unrouted)->pluck('id')->all()===[$director->id],'outgoing direction retains its director validation before DG');
 $self=new \App\Models\Courrier(['type'=>'INTERNE','expediteur'=>$unit->id,'destinataire'=>$unit->id]);
 try{$parties->assertDistinct($self);throw new RuntimeException('Self-route accepted');}catch(Illuminate\Validation\ValidationException){check(true,'self-correspondence rejected');}

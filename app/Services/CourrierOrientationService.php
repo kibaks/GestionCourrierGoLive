@@ -164,6 +164,10 @@ class CourrierOrientationService
         $current = $ready->first(fn($step) => $step->assigne_a !== $actor->id);
         if ($current) {
             $person = User::find($current->assigne_a);
+            if ($actor->isSecretaire() && $this->access->secretaryRoot($actor)?->type === 'direction'
+                && $person && $this->access->secretaryRoot($person)?->type === 'direction_generale') {
+                return 'Ce courrier attend encore le contrôle ou la validation de la Direction générale. Après sa transmission à votre secrétariat, vous pourrez l’orienter vers votre Directeur.';
+            }
             return 'Ce courrier est déjà dans le circuit. Étape en attente : '.$current->etape
                 .($person ? ' — '.$person->name : '').'. Aucune nouvelle transmission par ce secrétariat n’est nécessaire à cette étape.';
         }
@@ -175,9 +179,33 @@ class CourrierOrientationService
         return 'Le circuit ne prévoit pas de transmission par votre compte à cette étape. Consultez le circuit pour identifier l’action attendue.';
     }
 
-    public function initialOrientationAllowed(Courrier $courrier): bool
+    /** A new reception at a direction is distinct from repeating its previous handoff. */
+    public function receptionState(User $actor, Courrier $courrier, $steps = null): array
     {
-        return in_array($courrier->statut, ['ENREGISTRE','EN_ATTENTE_DG'], true);
+        $empty = ['orientationPendingReception'=>false, 'orientationAwaitingPreviousStep'=>false];
+        if (!$actor->isSecretaire() || in_array($courrier->statut, ['TRAITE','ARCHIVE'], true)) return $empty;
+        $root = $this->access->secretaryRoot($actor);
+        if ($root?->type !== 'direction') return $empty;
+        $steps ??= WorkflowEtape::where('courrier_id', $courrier->id)->orderBy('ordre')->get();
+        $source = $this->activeStep($actor, $courrier, $steps);
+        if (!$source) {
+            if ($this->alreadyForwarded($actor, $courrier, $steps)) return $empty;
+            $director = $steps->first(fn($step) => $step->assigne_a === $root->responsable_id
+                && $step->statut === 'EN_ATTENTE' && !$step->date_debut && $this->execution->readiness($step, $steps)['ready']);
+            $empty['orientationPendingReception'] = $director && (bool)$this->validatedDgAncestor($director, $steps);
+            $empty['orientationAwaitingPreviousStep'] = !$empty['orientationPendingReception'] && $steps->contains(fn($step) => $step->statut !== 'TERMINE');
+            return $empty;
+        }
+        $next = $steps->first(fn($step) => ($step->declencheur['etapePrecedenteId'] ?? null) === $source->id
+            && $step->assigne_a === $root->responsable_id && $step->statut === 'EN_ATTENTE');
+        $empty['orientationPendingReception'] = ($source->declencheur['phase'] ?? null) === 'RECEPTION_SECRETARIAT' && (bool)$next;
+        return $empty;
+    }
+
+    public function initialOrientationAllowed(Courrier $courrier, ?User $actor = null, $steps = null): bool
+    {
+        return in_array($courrier->statut, ['ENREGISTRE','EN_ATTENTE_DG'], true)
+            || ($actor && $this->receptionState($actor, $courrier, $steps)['orientationPendingReception']);
     }
 
     public function options(User $actor, Courrier $courrier): array
@@ -187,7 +215,7 @@ class CourrierOrientationService
         if ($courrier->type === 'INTERNE') abort_unless(app(CourrierPartyService::class)->entity($courrier, 'expediteur') && app(CourrierPartyService::class)->entity($courrier, 'destinataire'),422,'Renseignez les entités expéditrice et destinataire du courrier interne avant son orientation.');
         $targets = $this->targets($actor, $courrier);
         return [
-            'initialOrientation' => $this->initialOrientationAllowed($courrier),
+            'initialOrientation' => $this->initialOrientationAllowed($courrier, $actor),
             'blockedReason' => $targets->isEmpty() ? $this->unavailableReason($actor, $courrier) : null,
             'requiresDgAnnotation' => $this->requiresDgAnnotation($actor, $courrier),
             'targets' => $targets->map(fn($u)=>['id'=>$u->id,'nom'=>$u->name,'role'=>$u->role])->values(),
@@ -203,7 +231,7 @@ class CourrierOrientationService
             abort_unless($this->access->canUpdateCourrier($actor, $courrier) && !in_array($courrier->statut, ['TRAITE','ARCHIVE'], true),403);
             $steps = WorkflowEtape::where('courrier_id', $courrier->id)->lockForUpdate()->get();
             if (array_key_exists('initialOrientation',$data)) {
-                if ((bool)$data['initialOrientation']) abort_unless($this->initialOrientationAllowed($courrier),409,'Seuls les courriers en attente d’orientation peuvent être orientés.');
+                if ((bool)$data['initialOrientation']) abort_unless($this->initialOrientationAllowed($courrier, $actor, $steps),409,'Seuls les courriers en attente d’orientation peuvent être orientés.');
                 else abort_unless($this->activeStep($actor,$courrier,$steps),409,'Poursuivez le circuit uniquement depuis votre étape active.');
             }
             abort_if($this->alreadyForwarded($actor, $courrier, $steps),409,'Ce courrier a déjà été orienté par votre compte. Le prochain responsable doit poursuivre le circuit.');

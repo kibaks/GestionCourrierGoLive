@@ -18,6 +18,13 @@ class NotificationsController extends Controller
     {
         $user = Auth::user();
         $query = Notification::where('userId', $user->id);
+        if (!$user->isSuperAdmin()) {
+            $visible = app(\App\Services\CourrierAccessService::class)->getAccessibleCourriersQuery($user)->reorder()->select('id');
+            $query->where(fn($scope) => $scope->whereNull('relatedId')
+                ->orWhere(fn($other) => $other->whereNotNull('relatedType')->where('relatedType','!=','courrier'))
+                ->orWhereIn('relatedId', $visible));
+        }
+
 
         // Filtrer par type si spécifié
         if ($request->has('type')) {

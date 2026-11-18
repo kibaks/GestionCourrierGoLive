@@ -40,7 +40,7 @@ class DgAnnotationRoutingService
         }
         $chain=[$person];
         $direction=app(CourrierAccessService::class)->secretaryRoot($person);
-        if ($courrier->type==='INTERNE' && $direction && $direction->type==='direction') {
+        if ($direction && $direction->type==='direction') {
             $secretary=User::where('role','SECRETAIRE')->where('actif',true)->get()->first(fn($u)=>app(CourrierAccessService::class)->secretaryRoot($u)?->id===$direction->id);
             $director=User::whereKey($direction->responsable_id)->where('actif',true)->first();
             if (!$secretary || !$director) throw ValidationException::withMessages(['workflowTarget'=>'La direction destinataire doit avoir un secrétariat et un directeur actifs.']);
@@ -73,7 +73,7 @@ class DgAnnotationRoutingService
         }
         if ($plannedPath->isNotEmpty() && $plannedPath->last()->assigne_a===$person->id) {
             $engine=app(WorkflowExecutionService::class);$previous=$source;
-            if ($courrier->type==='INTERNE' && $direction?->type==='direction' && $plannedPath->first()->assigne_a!==$chain[0]->id) {
+            if ($direction?->type==='direction' && $plannedPath->first()->assigne_a!==$chain[0]->id) {
                 foreach ($steps->where('ordre','>',$source->ordre) as $later) $later->update(['ordre'=>$later->ordre+1]);
                 $reception=WorkflowEtape::create(['courrier_id'=>$courrier->id,'etape'=>'Réception et orientation du secrétariat — '.$direction->nom,'assigne_a'=>$chain[0]->id,'statut'=>'EN_ATTENTE','cree_par'=>$actor->id,'ordre'=>$source->ordre+1,'est_condition'=>false,'declencheur'=>['type'=>'APRES_ETAPE','etapePrecedenteId'=>$source->id,'circuit'=>'ARMP','phase'=>'RECEPTION_SECRETARIAT','dgSourceStepId'=>$source->id,'finalRecipientId'=>$person->id,'targetEntityId'=>$direction->id,'orientation'=>$evidence]]);
                 $engine->ensureAssignment($courrier,$reception,$actor);$previous=$reception;
