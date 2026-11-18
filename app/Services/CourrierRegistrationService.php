@@ -24,6 +24,17 @@ class CourrierRegistrationService
         $extra = $input['extraFields'] ?? [];
         if (is_string($extra)) $extra = json_decode($extra, true) ?: [];
         if (!is_array($extra)) $extra = [];
+        if (($input['type'] ?? null) === 'EXTERNE' && ($input['sens'] ?? 'ENTRANT') === 'ENTRANT') {
+            $central = app(CourrierAccessService::class)->secretaryRoot($actor);
+            if ($central?->type !== 'direction_generale') $central = \App\Models\EntiteOrganisationnelle::where('actif',true)->where('type','direction_generale')->where('nom','Direction Générale')->first();
+            abort_unless($central,422,'Renseignez la Direction Générale dans l’organigramme avant l’enregistrement des courriers externes entrants.');
+            $requested = trim((string)($input['destinataire'] ?? ''));
+            if ($requested !== '' && $requested !== $central->nom) $extra['destinataireOrientationSouhaite'] = $requested;
+            $input['destinataire'] = $central->nom;
+            $cascade = [];foreach(app(CourrierPartyService::class)->path($central) as $entity) $cascade[$entity->type]=$entity->id;
+            $extra['entiteDestinataireJson'] = json_encode($cascade,JSON_UNESCAPED_UNICODE);
+            $extra['entiteDestinataireChemin'] = $central->nom;
+        }
         if (($input['type'] ?? null) === 'INTERNE') {
             $path = app(CourrierPartyService::class)->path($root);
             $cascade = [];
@@ -61,8 +72,9 @@ class CourrierRegistrationService
             $courrier->extra_fields = $extra;
             return;
         }
-        $input = $this->input($actor, ['type'=>$courrier->type,'extraFields'=>$courrier->extra_fields]);
+        $input = $this->input($actor, ['type'=>$courrier->type,'sens'=>$courrier->sens,'destinataire'=>$courrier->destinataire,'extraFields'=>$courrier->extra_fields]);
         $courrier->expediteur = $input['expediteur'];
+        $courrier->destinataire = $input['destinataire'] ?? $courrier->destinataire;
         $courrier->enregistre_par = $actor->id;
         $courrier->extra_fields = $input['extraFields'];
     }
