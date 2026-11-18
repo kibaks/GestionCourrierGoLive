@@ -175,6 +175,11 @@ class CourrierOrientationService
         return 'Le circuit ne prévoit pas de transmission par votre compte à cette étape. Consultez le circuit pour identifier l’action attendue.';
     }
 
+    public function initialOrientationAllowed(Courrier $courrier): bool
+    {
+        return in_array($courrier->statut, ['ENREGISTRE','EN_ATTENTE_DG'], true);
+    }
+
     public function options(User $actor, Courrier $courrier): array
     {
         abort_unless($this->access->canViewCourrier($actor,$courrier),403);
@@ -182,6 +187,7 @@ class CourrierOrientationService
         if ($courrier->type === 'INTERNE') abort_unless(app(CourrierPartyService::class)->entity($courrier, 'expediteur') && app(CourrierPartyService::class)->entity($courrier, 'destinataire'),422,'Renseignez les entités expéditrice et destinataire du courrier interne avant son orientation.');
         $targets = $this->targets($actor, $courrier);
         return [
+            'initialOrientation' => $this->initialOrientationAllowed($courrier),
             'blockedReason' => $targets->isEmpty() ? $this->unavailableReason($actor, $courrier) : null,
             'requiresDgAnnotation' => $this->requiresDgAnnotation($actor, $courrier),
             'targets' => $targets->map(fn($u)=>['id'=>$u->id,'nom'=>$u->name,'role'=>$u->role])->values(),
@@ -196,6 +202,10 @@ class CourrierOrientationService
             $courrier = Courrier::whereKey($courrier->id)->lockForUpdate()->firstOrFail();
             abort_unless($this->access->canUpdateCourrier($actor, $courrier) && !in_array($courrier->statut, ['TRAITE','ARCHIVE'], true),403);
             $steps = WorkflowEtape::where('courrier_id', $courrier->id)->lockForUpdate()->get();
+            if (array_key_exists('initialOrientation',$data)) {
+                if ((bool)$data['initialOrientation']) abort_unless($this->initialOrientationAllowed($courrier),409,'Seuls les courriers en attente d’orientation peuvent être orientés.');
+                else abort_unless($this->activeStep($actor,$courrier,$steps),409,'Poursuivez le circuit uniquement depuis votre étape active.');
+            }
             abort_if($this->alreadyForwarded($actor, $courrier, $steps),409,'Ce courrier a déjà été orienté par votre compte. Le prochain responsable doit poursuivre le circuit.');
             $target = $this->targets($actor,$courrier)->firstWhere('id',$data['assigneA']);
             abort_unless($target,403,'Orientation non autorisée : choisissez le responsable correspondant au destinataire, en respectant les validations du circuit.');

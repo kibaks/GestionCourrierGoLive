@@ -15,10 +15,14 @@ $legacy=Assignation::where('courrier_id',$letter->id)->firstOrFail();$legacy->up
 check($engine->courrierStatus($letter,WorkflowEtape::where('courrier_id',$letter->id)->get())==='ASSIGNE','historical explicit assignment remains oriented');
 $legacy->update(['instructions'=>'[WORKFLOW] Circuit du courrier']);
 try{$engine->assertCourrierStatus($letter,'EN_TRAITEMENT',$secDG);throw new RuntimeException('Premature status accepted');}catch(Illuminate\Validation\ValidationException){check(true,'processing cannot be set before work begins');}
-$service->orient($secDG,$letter->fresh(),['assigneA'=>$dg->id]);
+$service->orient($secDG,$letter->fresh(),['assigneA'=>$dg->id,'initialOrientation'=>true]);
 check($letter->fresh()->statut==='ASSIGNE','transmission changes status to oriented, not processing');
+check(!$service->options($secDG,$letter->fresh())['initialOrientation'],'oriented courrier no longer offers initial orientation');
+denied(fn()=>$service->orient($secDG,$letter->fresh(),['assigneA'=>$dg->id,'initialOrientation'=>true]),409);
+denied(fn()=>$service->orient($secDG,$letter->fresh(),['assigneA'=>$dg->id,'initialOrientation'=>false]),409);
 $engine->transition($planned[1]->id,$dg,['statut'=>'EN_COURS'],false);
 check($letter->fresh()->statut==='EN_TRAITEMENT','starting substantive work changes status to processing');
+denied(fn()=>$service->orient($secDG,$letter->fresh(),['assigneA'=>$dg->id,'initialOrientation'=>true]),409);
 try{$engine->assertCourrierStatus($letter->fresh(),'ARCHIVE',$secDG);throw new RuntimeException('Early archive accepted');}catch(Illuminate\Validation\ValidationException){check(true,'archiving is refused before completion');}
 $engine->transition($planned[1]->id,$dg,['statut'=>'TERMINE','commentaire'=>'Examen et traitement terminés.'],false);
 check($letter->fresh()->statut==='EN_TRAITEMENT','closure remains necessary before treated');

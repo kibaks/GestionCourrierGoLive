@@ -48,7 +48,7 @@ $router->route($dg,$outgoing,$a2,['type'=>'ENTITE','id'=>$unit->id]);
 $engine->transition($source->id,$dg,['statut'=>'TERMINE','commentaire'=>'Instruction validée et transmise.'],false);
 check($orientation->targets($secretary,$outgoing->fresh())->pluck('id')->all()===[$director->id],'incoming direction queue proposes only its own director');
 check($orientation->targets($secDG,$outgoing->fresh())->isEmpty(),'DG secretary does not orient a letter in another direction reception queue');
-$orientation->orient($secretary,$outgoing->fresh(),['assigneA'=>$director->id]);
+$orientation->orient($secretary,$outgoing->fresh(),['assigneA'=>$director->id,'initialOrientation'=>false]);
 $orientation->orient($director,$outgoing->fresh(),['assigneA'=>$agent->id,'dgAnnotationId'=>$a2->id]);
 $agentStep=WorkflowEtape::where('courrier_id',$outgoing->id)->where('assigne_a',$agent->id)->firstOrFail();
 $closure=$closure->fresh();

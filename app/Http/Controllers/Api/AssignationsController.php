@@ -75,10 +75,12 @@ class AssignationsController extends Controller
             'courrierId'=>'required|uuid|exists:courriers,id',
             'assigneA'=>'required|uuid|exists:users,id',
             'dgAnnotationId'=>'nullable|uuid',
+            'initialOrientation'=>'nullable|boolean',
             'dateEcheance'=>'nullable|date|after:now',
             'instructions'=>'nullable|string|max:20000',
             'statut'=>'nullable|in:EN_ATTENTE',
         ]);
+        $validated['initialOrientation']=$validated['initialOrientation']??true;
         $assignment=app(\App\Services\CourrierOrientationService::class)->orient(Auth::user(),Courrier::findOrFail($validated['courrierId']),$validated);
         return response()->json(['data'=>$assignment->toArray()],201);
     }
