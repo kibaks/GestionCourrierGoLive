@@ -120,7 +120,36 @@ class CourrierFichierController extends Controller
      * - Si "file" présent (multipart) : import du fichier
      * - Sinon body JSON { "nom": "...", "type": "dossier", "parentId": "..." } pour créer un dossier
      */
+    /** Serialize receipt creation on the courrier, across users and retries. */
     public function store(Request $request, $courrierId): JsonResponse
+    {
+        if (!$request->boolean('estAccuseReception')) {
+            return $this->storeNew($request, $courrierId);
+        }
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $courrierId) {
+            $courrier = Courrier::whereKey($courrierId)->lockForUpdate()->first();
+            if (!$courrier) return response()->json(['message' => 'Courrier introuvable'], 404);
+            $user = Auth::user();
+            if (!$user || !$this->accessService->canViewCourrier($user, $courrier)) {
+                return response()->json(['message' => 'Accès non autorisé'], 403);
+            }
+            $existing = CourrierFichier::where('courrier_id', $courrierId)
+                ->where('type', 'fichier')->whereNotNull('chemin')
+                ->where(fn ($q) => $q->where('est_accuse_reception', true)
+                    ->orWhereRaw("LEFT(nom, 3) = 'AR_'"))
+                ->orderBy('created_at')->orderBy('id')->first();
+            if ($existing) {
+                return response()->json(['data' => $existing->toArray(), 'alreadyExists' => true]);
+            }
+            $response = $this->storeNew($request, $courrierId);
+            if ($response->getStatusCode() >= 400) {
+                throw new \Illuminate\Http\Exceptions\HttpResponseException($response);
+            }
+            return $response;
+        });
+    }
+
+    private function storeNew(Request $request, $courrierId): JsonResponse
     {
         $courrierIdStr = $courrierId !== null && $courrierId !== '' ? (string) $courrierId : '';
         if ($courrierIdStr === '') {
@@ -145,6 +174,15 @@ class CourrierFichierController extends Controller
             // Traiter tout fichier joint transmis dans la requête (file, fichier, files, fichiers, base64, etc.)
             $createdFiles = $this->fileService->handleRequestFiles($request, $courrier, $userId);
             if (!empty($createdFiles)) {
+                if ($request->boolean('estAccuseReception')) {
+                    if (count($createdFiles) !== 1) {
+                        throw ValidationException::withMessages(['file' => ['Un seul accusé de réception est autorisé.']]);
+                    }
+                    $createdFiles[0]->update([
+                        'est_accuse_reception' => true,
+                        'parent_id' => $this->resolveParentId($request->input('parentId'), $courrierId),
+                    ]);
+                }
                 $data = count($createdFiles) === 1
                     ? $createdFiles[0]->toArray()
                     : array_map(fn ($f) => $f->toArray(), $createdFiles);
@@ -484,6 +522,9 @@ class CourrierFichierController extends Controller
         if (!$user || !$this->accessService->canUpdateCourrier($user, $courrier)) {
             return response()->json(['message' => 'Accès non autorisé'], 403);
         }
+        if ($this->isReceptionReceipt($item)) {
+            return response()->json(['message' => 'L’accusé de réception original doit être conservé.'], 409);
+        }
         $validated = $request->validate([
             'nom' => 'sometimes|string|max:255',
             'parentId' => 'nullable|uuid',
@@ -517,6 +558,14 @@ class CourrierFichierController extends Controller
         if (!$user || !$this->accessService->canUpdateCourrier($user, $courrier)) {
             return response()->json(['message' => 'Accès non autorisé'], 403);
         }
+        $pending = [$item];
+        while ($pending) {
+            $candidate = array_pop($pending);
+            if ($this->isReceptionReceipt($candidate)) {
+                return response()->json(['message' => 'L’accusé de réception original doit être conservé.'], 409);
+            }
+            foreach (CourrierFichier::where('parent_id', $candidate->id)->get() as $child) $pending[] = $child;
+        }
         if ($item->type === 'fichier' && $item->chemin && !str_starts_with($item->chemin, 'http')) {
             [$disk, $path] = $this->diskAndPath($item);
             if ($disk && $path && Storage::disk($disk)->exists($path)) {
@@ -532,6 +581,11 @@ class CourrierFichierController extends Controller
      * Résout parent_id : si l'UUID existe en base pour ce courrier, le retourner ; sinon null.
      * Permet la migration Firebase (IDs non encore en MySQL) et évite les erreurs d'upload.
      */
+    private function isReceptionReceipt(CourrierFichier $item): bool
+    {
+        return $item->type === 'fichier' && ($item->est_accuse_reception || str_starts_with($item->nom, 'AR_'));
+    }
+
     private function resolveParentId(?string $parentId, string $courrierId): ?string
     {
         if (!$parentId || !Str::isUuid($parentId)) {
