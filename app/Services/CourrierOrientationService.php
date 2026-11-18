@@ -88,7 +88,7 @@ class CourrierOrientationService
             if (!$responsible) return collect();
             $parties = app(CourrierPartyService::class);
             $recipient = $parties->entity($courrier, 'destinataire');
-            if (!$recipient) return collect();
+            if (!$recipient && !($courrier->type === 'EXTERNE' && $courrier->sens === 'SORTANT')) return collect();
             $path = $parties->path($recipient);
             $pathIds = array_map(fn($entity) => $entity->id, $path);
             $steps = WorkflowEtape::where('courrier_id', $courrier->id)->orderBy('ordre')->get();
@@ -139,14 +139,42 @@ class CourrierOrientationService
             ->orderByDesc('created_at')->get();
     }
 
+    private function unavailableReason(User $actor, Courrier $courrier): string
+    {
+        if ($courrier->statut === 'TRAITE') return 'Ce courrier est déjà traité. Consultez son circuit pour voir les étapes réalisées.';
+        if ($courrier->statut === 'ARCHIVE') return 'Ce courrier est archivé. Aucune nouvelle orientation n’est attendue.';
+        $steps = WorkflowEtape::where('courrier_id', $courrier->id)->orderBy('ordre')->get();
+        $ready = $steps->filter(fn($step) => in_array($step->statut, ['EN_ATTENTE','EN_COURS','REJETE'], true)
+            && $this->execution->readiness($step, $steps)['ready']);
+        $rejected = $ready->firstWhere('statut', 'REJETE');
+        if ($rejected) return 'Une étape du circuit a été rejetée. Consultez le motif et corrigez cette étape avant une nouvelle transmission.';
+        $source = $this->activeStep($actor, $courrier, $steps);
+        if ($source && in_array($source->declencheur['phase'] ?? null, ['VALIDATION','CLOTURE'], true))
+            return 'Ce courrier attend une validation ou sa clôture dans le circuit, plutôt qu’une nouvelle orientation.';
+        $current = $ready->first(fn($step) => $step->assigne_a !== $actor->id);
+        if ($current) {
+            $person = User::find($current->assigne_a);
+            return 'Ce courrier est déjà dans le circuit. Étape en attente : '.$current->etape
+                .($person ? ' — '.$person->name : '').'. Aucune nouvelle transmission par ce secrétariat n’est nécessaire à cette étape.';
+        }
+        if ($actor->isSecretaire()) {
+            $root = $this->access->secretaryRoot($actor);
+            $responsible = $root?->responsable_id ? User::find($root->responsable_id) : null;
+            if (!$responsible || !$responsible->actif) return 'Le responsable de votre entité doit être renseigné et actif dans les paramètres de l’organisation.';
+        }
+        return 'Le circuit ne prévoit pas de transmission par votre compte à cette étape. Consultez le circuit pour identifier l’action attendue.';
+    }
+
     public function options(User $actor, Courrier $courrier): array
     {
         abort_unless($this->access->canViewCourrier($actor,$courrier),403);
         app(CourrierPartyService::class)->assertDistinct($courrier);
         if ($courrier->type === 'INTERNE') abort_unless(app(CourrierPartyService::class)->entity($courrier, 'expediteur') && app(CourrierPartyService::class)->entity($courrier, 'destinataire'),422,'Renseignez les entités expéditrice et destinataire du courrier interne avant son orientation.');
+        $targets = $this->targets($actor, $courrier);
         return [
+            'blockedReason' => $targets->isEmpty() ? $this->unavailableReason($actor, $courrier) : null,
             'requiresDgAnnotation' => $this->requiresDgAnnotation($actor, $courrier),
-            'targets' => $this->targets($actor,$courrier)->map(fn($u)=>['id'=>$u->id,'nom'=>$u->name,'role'=>$u->role])->values(),
+            'targets' => $targets->map(fn($u)=>['id'=>$u->id,'nom'=>$u->name,'role'=>$u->role])->values(),
             'instructions' => $this->instructions($courrier)->map(fn($a)=>['id'=>$a->id,'contenu'=>$a->contenu,'fichierId'=>$a->fichier_id,'page'=>$a->page])->values(),
         ];
     }

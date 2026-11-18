@@ -123,5 +123,11 @@ check($orientation->targets($admin,$noBypass)->pluck('id')->all()===[$dg->id],'a
 $orientation->orient($secDG,$noBypass,['assigneA'=>$dg->id]);
 check($orientation->targets($admin,$noBypass->fresh())->pluck('id')->all()===[$dg->id],'administrator sees only available circuit targets rather than queued tasks');
 denied(fn()=>$orientation->orient($admin,$noBypass->fresh(),['assigneA'=>$director->id]),403);
+check($orientation->options($secDG,$noBypass->fresh())['blockedReason']===null,'available DG target has no blocked reason');
+check(str_contains($orientation->options($secDG,$nested->fresh())['blockedReason'],'déjà traité'),'completed incoming workflow explains why no orientation is expected');
+check(str_contains($orientation->options($secretary,$noBureauCircuit->fresh())['blockedReason'],'déjà traité'),'completed local direction receipt cannot be reopened by orientation');
+$external=internalRouteLetter($unit,$dgUnit,$secDG,$unit);
+$external->update(['type'=>'EXTERNE','sens'=>'SORTANT','destinataire'=>'Institution partenaire','extra_fields'=>[]]);
+check($orientation->targets($secDG,$external->fresh())->pluck('id')->all()===[$dg->id],'outgoing external recipient does not prevent initial presentation to DG');
 echo "INTERNAL ROUNDTRIP TESTS PASSED\n";
 } finally {if($existing)DB::rollBack();}
