@@ -6,8 +6,16 @@ use App\Models\{Courrier, User};
 /** Registration identities always come from the authenticated account. */
 class CourrierRegistrationService
 {
+    private function assertType(User $actor, ?string $type): void
+    {
+        if ($type !== 'EXTERNE' || $actor->isSuperAdmin()) return;
+        $central = $actor->isSecretaire() && app(CourrierAccessService::class)->secretaryRoot($actor)?->type === 'direction_generale';
+        abort_unless($central, 403, 'La création des courriers externes est réservée au secrétariat de la Direction générale et à l’administrateur.');
+    }
+
     public function input(User $actor, array $input): array
     {
+        $this->assertType($actor, $input['type'] ?? null);
         $root = \App\Models\EntiteOrganisationnelle::where('actif', true)->find($actor->entite_id)
             ?? app(CourrierAccessService::class)->secretaryRoot($actor);
         abort_unless($root, 422, 'Rattachez le compte connecté à une entité avant l’enregistrement.');
@@ -40,6 +48,7 @@ class CourrierRegistrationService
 
     public function prepare(User $actor, Courrier $courrier): void
     {
+        if (!$courrier->exists || $courrier->isDirty('type')) $this->assertType($actor, $courrier->type);
         if ($courrier->exists) {
             // Editing a received record must not replace its original sender by the editor.
             $courrier->expediteur = $courrier->getRawOriginal('expediteur');
