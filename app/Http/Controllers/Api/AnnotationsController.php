@@ -9,7 +9,6 @@ use App\Models\Notification;
 use App\Models\User;
 use App\Models\WorkflowEtape;
 use App\Services\CourrierAccessService;
-use App\Services\NotificationDeliveryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -451,7 +450,6 @@ class AnnotationsController extends Controller
             mb_strimwidth($annotation->contenu, 0, 120, '…')
         );
 
-        $delivery = app(NotificationDeliveryService::class);
         foreach ($validUserIds as $uid) {
             $notification = Notification::create([
                 'userId' => $uid,
@@ -473,11 +471,6 @@ class AnnotationsController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-            try {
-                $delivery->deliver($notification);
-            } catch (\Throwable $e) {
-                report($e);
-            }
         }
     }
 }

@@ -31,7 +31,11 @@ class NotificationDeliveryService {
             app(TwilioService::class)->send($user->sms_phone,mb_strimwidth($notification->title.': '.$notification->message,0,150,'…'));
         } elseif ($channel==='whatsapp') {
             if (!$user->sms_verified_at || !$user->sms_phone || empty($settings['whatsapp']['enabled'])) return false;
-            app(TwilioService::class)->sendWhatsapp($user->sms_phone,$notification->title,$notification->message);
+            if (($settings['whatsapp']['provider'] ?? 'twilio') === 'meta') {
+                app(MetaWhatsappService::class)->send($user->sms_phone,$notification->title,$notification->message);
+            } else {
+                app(TwilioService::class)->sendWhatsapp($user->sms_phone,$notification->title,$notification->message);
+            }
         } else return false;
         return true;
     }
