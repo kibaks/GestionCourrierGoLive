@@ -24,8 +24,13 @@ class NotificationDeliveryService {
         if (empty($channels[$channel])) return false;
         $settings=CommunicationSettings::get();
         if ($channel==='email') {
-            if (!CommunicationSettings::configureMail()) return false;
-            Mail::raw("{$notification->title}\n\n{$notification->message}",function($mail)use($user,$notification){$mail->to($user->email)->subject($notification->title);});
+            if (empty($settings['mail']['enabled'])) return false;
+            if (($settings['mail']['provider'] ?? 'smtp') === 'gmail') {
+                app(GmailService::class)->send($user->email,$notification->title,$notification->message);
+            } else {
+                if (!CommunicationSettings::configureMail()) return false;
+                Mail::raw("{$notification->title}\n\n{$notification->message}",function($mail)use($user,$notification){$mail->to($user->email)->subject($notification->title);});
+            }
         } elseif ($channel==='sms') {
             if (!$user->sms_verified_at || !$user->sms_phone || empty($settings['sms']['enabled'])) return false;
             app(TwilioService::class)->send($user->sms_phone,mb_strimwidth($notification->title.': '.$notification->message,0,150,'…'));

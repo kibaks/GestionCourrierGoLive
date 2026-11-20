@@ -10,10 +10,13 @@ use Illuminate\Validation\ValidationException;
 
 class CommunicationSettings
 {
+    private static function secretFields(): array
+    { return [['mail','password'],['mail','googleClientSecret'],['mail','googleRefreshToken'],['sms','token'],['whatsapp','accessToken']]; }
+
     public static function defaults(): array
     {
         return [
-            'mail' => ['enabled' => false, 'driver' => 'smtp', 'host' => 'mail.armp-rdc.cd', 'port' => 465, 'encryption' => 'ssl', 'username' => 'info@armp-rdc.cd', 'password' => '', 'fromAddress' => 'info@armp-rdc.cd', 'fromName' => 'ARMP RDC'],
+            'mail' => ['provider' => 'smtp', 'googleClientId' => '', 'googleClientSecret' => '', 'googleRefreshToken' => '', 'enabled' => false, 'driver' => 'smtp', 'host' => 'mail.armp-rdc.cd', 'port' => 465, 'encryption' => 'ssl', 'username' => 'info@armp-rdc.cd', 'password' => '', 'fromAddress' => 'info@armp-rdc.cd', 'fromName' => 'ARMP RDC'],
             'sms' => ['provider' => 'twilio', 'mode' => 'live', 'enabled' => false, 'sid' => '', 'token' => '', 'from' => ''],
             'whatsapp' => ['enabled' => false, 'provider' => 'twilio', 'from' => '', 'contentSid' => '', 'accessToken' => '', 'phoneNumberId' => '', 'apiVersion' => 'v22.0', 'templateName' => '', 'language' => 'fr'],
         ];
@@ -27,8 +30,9 @@ class CommunicationSettings
 
     public static function publicValue(array $settings): array
     {
-        foreach (['mail' => 'password', 'sms' => 'token', 'whatsapp' => 'accessToken'] as $section => $key) {
-            $settings[$section]['hasSecret'] = !empty($settings[$section][$key]);
+        foreach (self::secretFields() as [$section, $key]) {
+            $flag = match ($key) { 'googleClientSecret' => 'hasGoogleClientSecret', 'googleRefreshToken' => 'hasGoogleRefreshToken', default => 'hasSecret' };
+            $settings[$section][$flag] = !empty($settings[$section][$key]);
             $settings[$section][$key] = '';
         }
         return $settings;
@@ -42,7 +46,7 @@ class CommunicationSettings
 
     public static function protect(array $general): array
     {
-        foreach (['mail' => 'password', 'sms' => 'token', 'whatsapp' => 'accessToken'] as $section => $key) {
+        foreach (self::secretFields() as [$section, $key]) {
             $secret = $general[$section][$key] ?? '';
             if ($secret && !str_starts_with($secret, 'enc:')) $general[$section][$key] = 'enc:' . Crypt::encryptString($secret);
         }
@@ -52,6 +56,7 @@ class CommunicationSettings
     public static function save(array $input): array
     {
         $validated = Validator::make($input, [
+            'mail.provider' => 'sometimes|in:smtp,gmail', 'mail.googleClientId' => 'nullable|string|max:255', 'mail.googleClientSecret' => 'nullable|string|max:1024', 'mail.googleRefreshToken' => 'nullable|string|max:4096',
             'mail' => 'required|array', 'mail.enabled' => 'required|boolean', 'mail.host' => 'required|string|max:253|regex:/^[a-zA-Z0-9.-]+$/',
             'mail.port' => 'required|integer|in:465,587', 'mail.encryption' => 'required|in:ssl,tls', 'mail.username' => 'required|string|max:255',
             'mail.password' => 'nullable|string|max:1024', 'mail.fromAddress' => 'required|email|max:255', 'mail.fromName' => 'nullable|string|max:255',
@@ -68,7 +73,7 @@ class CommunicationSettings
         ])->validate();
         $settings = array_replace_recursive(self::get(), $validated);
         if (self::get()['sms']['mode'] === 'test' && $settings['sms']['mode'] === 'live' && (empty($validated['sms']['token']) || $settings['sms']['sid'] === self::get()['sms']['sid'])) throw ValidationException::withMessages(['sms.mode' => 'Remplacez le SID et le jeton de test par les identifiants Live.']);
-        foreach (['mail' => 'password', 'sms' => 'token', 'whatsapp' => 'accessToken'] as $section => $key) {
+        foreach (self::secretFields() as [$section, $key]) {
             if (empty($validated[$section][$key])) $settings[$section][$key] = self::get()[$section][$key];
             elseif (str_starts_with($validated[$section][$key], 'enc:')) throw ValidationException::withMessages([$section => 'Secret invalide.']);
         }
@@ -77,7 +82,9 @@ class CommunicationSettings
         $twilioWhatsapp = $settings['whatsapp']['enabled'] && $settings['whatsapp']['provider'] === 'twilio';
         if ($settings['sms']['mode'] === 'test' && ($settings['sms']['enabled'] || $twilioWhatsapp)) throw ValidationException::withMessages(['sms.mode' => 'Les identifiants de test ne permettent pas de livrer des SMS ou WhatsApp via Twilio. Renseignez les identifiants Live avant activation.']);
         if (($settings['mail']['port'] === 465 && $settings['mail']['encryption'] !== 'ssl') || ($settings['mail']['port'] === 587 && $settings['mail']['encryption'] !== 'tls')) throw ValidationException::withMessages(['mail.port' => 'Utilisez SSL pour 465 ou STARTTLS pour 587.']);
-        if ($settings['mail']['enabled'] && !$settings['mail']['password']) throw ValidationException::withMessages(['mail.password' => 'Renseignez le mot de passe du compte mail avant activation.']);
+        if ($settings['mail']['enabled'] && ($settings['mail']['provider'] ?? 'smtp') === 'gmail' && (!$settings['mail']['googleClientId'] || !$settings['mail']['googleClientSecret'] || !$settings['mail']['googleRefreshToken'])) throw ValidationException::withMessages(['mail' => 'Renseignez les identifiants OAuth et autorisez Gmail avant activation.']);
+        if (($settings['mail']['provider'] ?? 'smtp') === 'gmail' && $settings['mail']['fromAddress'] !== $settings['mail']['username']) throw ValidationException::withMessages(['mail.fromAddress' => 'Utilisez l’adresse du compte Google autorisé comme expéditeur.']);
+        if ($settings['mail']['enabled'] && ($settings['mail']['provider'] ?? 'smtp') === 'smtp' && !$settings['mail']['password']) throw ValidationException::withMessages(['mail.password' => 'Renseignez le mot de passe du compte mail avant activation.']);
         if (($settings['sms']['enabled'] || $twilioWhatsapp) && (!$settings['sms']['sid'] || !$settings['sms']['token'])) throw ValidationException::withMessages(['sms' => 'Renseignez le SID et le jeton Twilio avant activation.']);
         if ($settings['sms']['enabled'] && !$settings['sms']['from']) throw ValidationException::withMessages(['sms.from' => 'Numéro expéditeur SMS requis.']);
         if ($twilioWhatsapp && (!$settings['whatsapp']['from'] || !$settings['whatsapp']['contentSid'])) throw ValidationException::withMessages(['whatsapp' => 'Expéditeur WhatsApp et modèle approuvé requis (variables 1 : titre, 2 : message).']);
